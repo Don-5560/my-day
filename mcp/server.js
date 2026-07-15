@@ -143,7 +143,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case "write_diary":
         return ok(
-          await store.setDiary(args.date || store.today(), args.diary, args.mood)
+          await store.setDiary(args.date || store.today(), { diary: args.diary, mood: args.mood })
         );
 
       case "get_history":
