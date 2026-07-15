@@ -20,3 +20,5 @@ services:
         sync: false
       - key: DATABASE_AUTH_TOKEN # Turso のトークン
         sync: false
+      - key: MCP_TOKEN # リモートMCP用の秘密トークン（URLの一部になる）
+        sync: false

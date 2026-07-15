@@ -1,0 +1,295 @@
+// MCPツール定義と実装（共通）。
+// stdio版(mcp/server.js = PCのClaude Desktop用)と、
+// HTTP版(server.jsの /mcp/:token = スマホ/リモートのClaude用)の両方がこれを使う。
+
+import { randomUUID } from "node:crypto";
+import * as store from "../lib/store.js";
+
+// フロント(core.js)と同じXPルール。MCP経由の行動にもXPを付けて整合させる。
+const XP = { task: 10, todoHigh: 20, todoMid: 10, todoLow: 5, diary: 15 };
+
+async function awardXp(amt, why) {
+  const xp = (await store.getDoc("xp")) ?? { events: [] };
+  xp.events.push({ id: randomUUID(), ts: Date.now(), amt, why });
+  await store.saveDoc("xp", xp);
+  return amt;
+}
+
+function levelOf(events) {
+  let xp = events.reduce((s, e) => s + e.amt, 0), lvl = 1, need = 100;
+  while (xp >= need) { xp -= need; lvl++; need = 100 + (lvl - 1) * 50; }
+  return { lvl, cur: xp, need, total: events.reduce((s, e) => s + e.amt, 0) };
+}
+
+const CATS = ["勉強", "制作", "営業", "生活", "趣味"];
+const PRIS = ["高", "中", "低"];
+
+export const TOOLS = [
+  {
+    name: "get_overview",
+    description:
+      "LifeOSのダッシュボード概要を取得する。レベル/XP/連続記録、今日のタスク、今週が期限のTodo、今日の勉強時間、今月の売上、進行中の案件、目標。予定を組む・状況を確認するときは、まずこれを呼ぶ。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_today",
+    description: "指定日（省略で今日）のやることリストと日報を取得する。",
+    inputSchema: {
+      type: "object",
+      properties: { date: { type: "string", description: "YYYY-MM-DD。省略で今日" } },
+    },
+  },
+  {
+    name: "add_task",
+    description: "今日（または指定日）の「今日のやること」に1件追加する。その日にやる小さいタスク向け。期限付き・カテゴリー付きの管理はadd_todoを使う。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "complete_task",
+    description: "「今日のやること」のタスクを完了/未完了にする。done省略で反転。完了時はXPが入る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "タスクID（get_todayで取得）" },
+        done: { type: "boolean" },
+        date: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "write_diary",
+    description: "日報を書く/上書きする。diary=今日やったこと、reflect=反省、tomorrow=明日の目標、mood=気分(laugh/smile/meh/frown/tired)。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diary: { type: "string" },
+        reflect: { type: "string" },
+        tomorrow: { type: "string" },
+        mood: { type: "string", enum: ["laugh", "smile", "meh", "frown", "tired", ""] },
+        date: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "get_history",
+    description: "直近n日ぶんの日次記録（タスク・日報）を取得する。振り返りや傾向分析の材料。",
+    inputSchema: {
+      type: "object",
+      properties: { days: { type: "number", description: "既定14" } },
+    },
+  },
+  {
+    name: "list_todos",
+    description: "Todoリスト（期限・カテゴリー・優先度付きのタスク管理）を取得する。完了済みも含む。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "add_todo",
+    description: "Todoを追加する。予定を組むときはこれで期限付きのTodoを作る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        cat: { type: "string", enum: CATS, description: "カテゴリー。既定は制作" },
+        pri: { type: "string", enum: PRIS, description: "優先度。既定は中" },
+        due: { type: "string", description: "締切 YYYY-MM-DD" },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "complete_todo",
+    description: "Todoを完了にする。idかtitle（完全一致）で指定。優先度に応じてXPが入る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        title: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "log_study",
+    description: "勉強時間を記録する（分単位）。学習グラフとXPに反映される。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        min: { type: "number", description: "勉強した分数" },
+        subject: { type: "string", description: "科目（例: React, JavaScript, 一般）" },
+        date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
+      },
+      required: ["min"],
+    },
+  },
+  {
+    name: "log_sale",
+    description: "売上を記録する。source は Web制作 / Uber / その他。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        amount: { type: "number", description: "金額（円）" },
+        source: { type: "string", enum: ["Web制作", "Uber", "その他"] },
+        memo: { type: "string" },
+        date: { type: "string" },
+      },
+      required: ["amount"],
+    },
+  },
+  {
+    name: "get_templates",
+    description: "毎日/曜日ごとの定番タスク設定を取得する。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_templates",
+    description: "定番タスクを設定する。recurring配列: {title, days}。daysは 'daily' か曜日配列(['mon','wed'])。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        recurring: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { title: { type: "string" }, days: {} },
+            required: ["title"],
+          },
+        },
+      },
+      required: ["recurring"],
+    },
+  },
+];
+
+export async function callTool(name, args = {}) {
+  switch (name) {
+    case "get_overview": {
+      const today = store.today();
+      const [day, todosDoc, studyDoc, salesDoc, projDoc, xpDoc, settings] = await Promise.all([
+        store.getDay(today),
+        store.getDoc("todos"), store.getDoc("study"), store.getDoc("sales"),
+        store.getDoc("projects"), store.getDoc("xp"), store.getDoc("settings"),
+      ]);
+      const todos = todosDoc?.items ?? [];
+      const events = xpDoc?.events ?? [];
+      const in7 = new Date(); in7.setDate(in7.getDate() + 6);
+      const lim = `${in7.getFullYear()}-${String(in7.getMonth() + 1).padStart(2, "0")}-${String(in7.getDate()).padStart(2, "0")}`;
+      return {
+        date: today,
+        level: levelOf(events),
+        todayGoal: settings?.todayGoal || "",
+        monthGoal: settings?.monthGoal || "",
+        todayTasks: day.tasks.map((t) => ({ id: t.id, title: t.title, done: t.done })),
+        weekTodos: todos
+          .filter((t) => !t.done && t.due && t.due <= lim)
+          .map((t) => ({ id: t.id, title: t.title, cat: t.cat, pri: t.pri, due: t.due })),
+        openTodos: todos.filter((t) => !t.done).length,
+        studyTodayMin: (studyDoc?.logs ?? []).filter((l) => l.date === today).reduce((s, l) => s + l.min, 0),
+        salesThisMonth: (salesDoc?.logs ?? []).filter((l) => l.date?.slice(0, 7) === today.slice(0, 7)).reduce((s, l) => s + l.amount, 0),
+        activeProjects: (projDoc?.items ?? []).filter((p) => (p.progress || 0) < 100).map((p) => ({ name: p.name, client: p.client, deadline: p.deadline, progress: p.progress })),
+        diaryWritten: !!day.diary,
+      };
+    }
+
+    case "get_today":
+      return store.getDay(args.date || store.today());
+
+    case "add_task": {
+      const { task, day } = await store.addTask(args.date || store.today(), args.title, "ai");
+      return { added: task, tasks: day.tasks };
+    }
+
+    case "complete_task": {
+      const { task } = await store.setTaskDone(args.date || store.today(), args.id, args.done);
+      if (task.done) await awardXp(XP.task, "タスク完了");
+      return { updated: task };
+    }
+
+    case "write_diary": {
+      const day = await store.setDiary(args.date || store.today(), args);
+      if (args.diary) await awardXp(XP.diary, "日報を書いた");
+      return day;
+    }
+
+    case "get_history":
+      return store.recentDays(args.days || 14);
+
+    case "list_todos":
+      return (await store.getDoc("todos")) ?? { items: [] };
+
+    case "add_todo": {
+      const doc = (await store.getDoc("todos")) ?? { items: [] };
+      const todo = {
+        id: randomUUID(),
+        title: String(args.title).trim(),
+        cat: CATS.includes(args.cat) ? args.cat : "制作",
+        pri: PRIS.includes(args.pri) ? args.pri : "中",
+        due: args.due || "",
+        tags: Array.isArray(args.tags) ? args.tags : [],
+        done: false, createdAt: Date.now(), order: doc.items.length,
+        source: "ai",
+      };
+      doc.items.push(todo);
+      await store.saveDoc("todos", doc);
+      return { added: todo };
+    }
+
+    case "complete_todo": {
+      const doc = (await store.getDoc("todos")) ?? { items: [] };
+      const t = doc.items.find((x) => x.id === args.id || x.title === args.title);
+      if (!t) throw new Error("Todoが見つかりません。list_todosでidを確認してください");
+      t.done = true; t.doneAt = Date.now();
+      await store.saveDoc("todos", doc);
+      const amt = t.pri === "高" ? XP.todoHigh : t.pri === "低" ? XP.todoLow : XP.todoMid;
+      await awardXp(amt, "Todo完了");
+      return { completed: t, xp: amt };
+    }
+
+    case "log_study": {
+      const doc = (await store.getDoc("study")) ?? { logs: [] };
+      const log = {
+        id: randomUUID(),
+        date: args.date || store.today(),
+        min: Math.max(1, Math.round(args.min)),
+        subject: args.subject || "一般",
+        src: "ai",
+      };
+      doc.logs.push(log);
+      await store.saveDoc("study", doc);
+      const xp = await awardXp(Math.min(log.min, 120), `勉強 ${log.min}分`);
+      return { logged: log, xp };
+    }
+
+    case "log_sale": {
+      const doc = (await store.getDoc("sales")) ?? { logs: [] };
+      const log = {
+        id: randomUUID(),
+        date: args.date || store.today(),
+        amount: Math.round(args.amount),
+        source: ["Web制作", "Uber", "その他"].includes(args.source) ? args.source : "その他",
+        memo: args.memo || "",
+      };
+      doc.logs.push(log);
+      await store.saveDoc("sales", doc);
+      const xp = await awardXp(Math.min(Math.round(log.amount / 1000), 300), "売上を記録");
+      return { logged: log, xp };
+    }
+
+    case "get_templates":
+      return store.getTemplates();
+
+    case "set_templates":
+      return store.saveTemplates({ recurring: args.recurring });
+
+    default:
+      throw new Error(`未知のツール: ${name}`);
+  }
+}

@@ -99,20 +99,33 @@ Claude Desktop の設定（`~/Library/Application Support/Claude/claude_desktop_
       }
 ```
 
-### B. スマホのClaudeからも（Phase 2・準備中）
+### B. スマホのClaudeからも（リモートMCPコネクター）
 
-公開したサイトに「リモートMCP」を追加し、Claude(Pro)の**コネクター**として登録する予定。
-これでスマホのClaudeからもタスク・日記を読み書きできるようになります。
+公開サーバーには `/mcp/<MCP_TOKEN>` というリモートMCPエンドポイントが内蔵されています。
+
+1. トークンを生成: `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`
+2. Render の Environment に `MCP_TOKEN` として設定 → 再デプロイ
+3. [claude.ai/settings/connectors](https://claude.ai/settings/connectors) → 「カスタムコネクターを追加」→ URLに
+   `https://<あなたのapp>.onrender.com/mcp/<MCP_TOKEN>` を登録
+4. スマホ・PCどちらのClaudeアプリでも、そのコネクターを有効にして会話するだけ
+
+⚠️ このURLを知っている人はあなたのデータを読み書きできます。他人に教えないこと。
+漏れた場合は `MCP_TOKEN` を変えれば旧URLは即座に無効になります。
+
+> Render無料プランは15分アクセスがないとスリープします。Claudeから最初の呼び出しが
+> タイムアウトしたら、もう一度試すか、先にサイトを開いて起こしてください。
 
 ### 使えるツール
 
 | ツール | できること |
 | --- | --- |
-| `get_today` | 今日のタスク・日記を取得 |
-| `add_task` | タスクを追加 |
-| `complete_task` | タスクを完了/未完了 |
-| `write_diary` | 日記・気分を書き込む |
-| `get_history` | 直近n日の記録を取得（振り返り・提案の材料） |
+| `get_overview` | ダッシュボード概要（レベル・今週のTodo・売上・案件など）。予定を組む起点 |
+| `get_today` / `add_task` / `complete_task` | 今日のやることの取得・追加・完了 |
+| `write_diary` | 日報（やったこと・反省・明日の目標・気分） |
+| `get_history` | 直近n日の記録（振り返り・分析の材料） |
+| `list_todos` / `add_todo` / `complete_todo` | 期限・カテゴリー付きTodoの管理 |
+| `log_study` | 勉強時間を記録（XPも入る） |
+| `log_sale` | 売上を記録 |
 | `get_templates` / `set_templates` | 定番タスクの取得・設定 |
 
 ---

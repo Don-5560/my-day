@@ -4,10 +4,15 @@
 
 import express from "express";
 import cookieParser from "cookie-parser";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import * as store from "./lib/store.js";
 import { makeToken, verifyToken, checkPassword, MAX_AGE_MS, warnIfInsecure } from "./lib/auth.js";
+import { TOOLS, callTool } from "./mcp/tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -48,6 +53,47 @@ app.post("/api/logout", (_req, res) => {
   res.clearCookie("sid");
   res.json({ ok: true });
 });
+
+// --- リモートMCP（スマホ/PCのClaudeがコネクターとして接続する） ---
+// URL自体に秘密トークンを含める方式: https://<app>/mcp/<MCP_TOKEN>
+// クッキー認証の前に置く（Claudeはブラウザではないのでクッキーを持てない）。
+
+const MCP_TOKEN = process.env.MCP_TOKEN || (PROD ? null : "dev");
+
+function mcpTokenOk(given) {
+  if (!MCP_TOKEN || typeof given !== "string") return false;
+  const a = Buffer.from(given), b = Buffer.from(MCP_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+app.post("/mcp/:token", async (req, res) => {
+  if (!MCP_TOKEN) return res.status(503).json({ error: "MCP_TOKEN が未設定です" });
+  if (!mcpTokenOk(req.params.token)) return res.status(401).json({ error: "無効なトークン" });
+  try {
+    // ステートレス運用: リクエストごとにサーバー/トランスポートを作って閉じる
+    const mcp = new McpServer({ name: "lifeos", version: "0.2.0" }, { capabilities: { tools: {} } });
+    mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+    mcp.setRequestHandler(CallToolRequestSchema, async (r) => {
+      try {
+        const result = await callTool(r.params.name, r.params.arguments || {});
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `エラー: ${err.message}` }] };
+      }
+    });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on("close", () => { transport.close(); mcp.close(); });
+    await mcp.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error("MCP error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+// ステートレスなので GET(SSE購読)/DELETE は未対応でよい
+app.get("/mcp/:token", (_req, res) => res.status(405).json({ error: "POSTのみ対応" }));
+app.delete("/mcp/:token", (_req, res) => res.status(405).json({ error: "POSTのみ対応" }));
 
 // --- ここから下はログイン必須 ---
 
