@@ -137,25 +137,39 @@ const LOGIN_HTML = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
     box-shadow:0 10px 30px rgba(0,0,0,.35)}
   h1{margin:0 0 4px;font-size:20px}
   p{margin:0 0 18px;color:#9aa2af;font-size:13px}
-  input{width:100%;padding:11px 12px;border:1px solid #262a31;border-radius:10px;background:#0f1115;color:#fff;
-    font-size:16px;outline:none;margin-bottom:12px}
+  .field{position:relative;margin-bottom:12px}
+  input{width:100%;padding:11px 44px 11px 12px;border:1px solid #262a31;border-radius:10px;background:#0f1115;
+    color:#fff;font-size:16px;outline:none}
   input:focus{border-color:#8b8cf7}
-  button{width:100%;padding:11px;border:none;border-radius:10px;background:#6366f1;color:#fff;font-size:15px;
-    font-weight:600;cursor:pointer}
+  .eye{position:absolute;top:0;right:0;height:100%;width:44px;background:none;border:none;color:#9aa2af;
+    cursor:pointer;font-size:18px;display:grid;place-items:center;padding:0}
+  .eye:hover{color:#e8eaed}
+  button.submit{width:100%;padding:11px;border:none;border-radius:10px;background:#6366f1;color:#fff;
+    font-size:15px;font-weight:600;cursor:pointer}
   .err{color:#f87171;font-size:13px;min-height:18px;margin-top:6px}
 </style></head><body>
   <form class="box" id="f">
     <h1>My Day 🗓️</h1>
     <p>あなた専用。パスワードを入れてください。</p>
-    <input type="password" id="pw" placeholder="パスワード" autocomplete="current-password" autofocus>
-    <button type="submit">ログイン</button>
+    <div class="field">
+      <input type="password" id="pw" placeholder="パスワード" autocomplete="current-password" autofocus>
+      <button type="button" class="eye" id="eye" aria-label="パスワードを表示">👁️</button>
+    </div>
+    <button type="submit" class="submit">ログイン</button>
     <div class="err" id="e"></div>
   </form>
   <script>
+    const pw = document.getElementById("pw");
+    document.getElementById("eye").addEventListener("click", () => {
+      const show = pw.type === "password";
+      pw.type = show ? "text" : "password";
+      document.getElementById("eye").textContent = show ? "🙈" : "👁️";
+      pw.focus();
+    });
     document.getElementById("f").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const r = await fetch("/api/login", {method:"POST",headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({password: document.getElementById("pw").value})});
+        body: JSON.stringify({password: pw.value})});
       if (r.ok) location.href = "/";
       else document.getElementById("e").textContent = "パスワードが違います";
     });

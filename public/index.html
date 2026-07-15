@@ -2,61 +2,100 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>My Day — 今日のやること & 日記</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="app">
-    <header class="top">
-      <div>
-        <p class="eyebrow">今日</p>
+
+    <!-- ===== ホーム（今日） ===== -->
+    <section class="view active" id="view-home">
+      <header class="home-head">
+        <p class="greeting" id="greeting">こんにちは</p>
         <h1 id="dateLabel">—</h1>
-      </div>
-      <button id="exportBtn" class="ghost" title="直近の記録をコピー">AI用にコピー</button>
-    </header>
+      </header>
 
-    <!-- 今日のやること -->
-    <section class="card">
-      <h2>やること</h2>
-      <ul id="taskList" class="tasks"></ul>
-      <form id="addForm" class="add">
-        <input id="addInput" type="text" placeholder="やることを追加…" autocomplete="off" />
-        <button type="submit">追加</button>
-      </form>
-      <p id="taskEmpty" class="empty hidden">まだ何もありません。定番タスクを設定するか、上から追加してください。</p>
-    </section>
-
-    <!-- やったことの記録（日記） -->
-    <section class="card">
-      <h2>やったこと・ふりかえり</h2>
-      <div class="mood">
-        <span>気分</span>
-        <div id="moodRow" class="mood-row">
-          <button data-mood="😄" class="mood-btn">😄</button>
-          <button data-mood="🙂" class="mood-btn">🙂</button>
-          <button data-mood="😐" class="mood-btn">😐</button>
-          <button data-mood="😕" class="mood-btn">😕</button>
-          <button data-mood="😫" class="mood-btn">😫</button>
+      <!-- 進捗 -->
+      <div class="card progress-card">
+        <div class="ring" aria-hidden="true">
+          <svg viewBox="0 0 64 64">
+            <circle class="ring-bg" cx="32" cy="32" r="26" />
+            <circle class="ring-fg" id="ring" cx="32" cy="32" r="26" />
+          </svg>
+          <span class="ring-pct" id="ringPct">0%</span>
+        </div>
+        <div class="progress-text">
+          <strong id="progressLabel">今日はまだこれから</strong>
+          <span id="progressSub">やること 0 件</span>
         </div>
       </div>
-      <textarea id="diary" placeholder="今日やったこと、感じたこと、明日への一言…"></textarea>
-      <p id="saveState" class="save-state">保存済み</p>
+
+      <!-- やること -->
+      <section class="card">
+        <h2>やること</h2>
+        <ul id="taskList" class="tasks"></ul>
+        <p id="taskEmpty" class="empty hidden">まだ何もありません。下から追加、または設定で定番タスクを登録できます。</p>
+        <form id="addForm" class="add">
+          <input id="addInput" type="text" placeholder="やることを追加…" autocomplete="off" />
+          <button type="submit">追加</button>
+        </form>
+      </section>
+
+      <!-- ふりかえり -->
+      <section class="card">
+        <h2>やったこと・ふりかえり</h2>
+        <div class="mood">
+          <span>気分</span>
+          <div id="moodRow" class="mood-row">
+            <button data-mood="😄" class="mood-btn">😄</button>
+            <button data-mood="🙂" class="mood-btn">🙂</button>
+            <button data-mood="😐" class="mood-btn">😐</button>
+            <button data-mood="😕" class="mood-btn">😕</button>
+            <button data-mood="😫" class="mood-btn">😫</button>
+          </div>
+        </div>
+        <textarea id="diary" placeholder="今日やったこと、感じたこと、明日への一言…"></textarea>
+        <p id="saveState" class="save-state">保存済み</p>
+      </section>
+
+      <button id="exportBtn" class="wide ghost">この1週間をAI用にコピー</button>
     </section>
 
-    <!-- 定番タスク -->
-    <details class="card">
-      <summary>定番タスク（毎日/曜日ごとに自動で出る）</summary>
-      <p class="hint">1行に1つ。<code>タスク名</code> だけなら毎日。曜日を絞るなら <code>タスク名 @mon,wed,fri</code>（sun mon tue wed thu fri sat）。</p>
-      <textarea id="templates" placeholder="ストレッチ&#10;英語の勉強 @mon,wed,fri&#10;水を2L飲む"></textarea>
-      <button id="saveTemplates">保存</button>
-    </details>
+    <!-- ===== きろく（過去のふりかえり） ===== -->
+    <section class="view" id="view-records">
+      <header class="home-head"><h1>きろく</h1><p class="greeting">これまでの積み重ね</p></header>
+      <div id="recordsList" class="records"></div>
+      <p id="recordsEmpty" class="empty hidden">まだ記録がありません。今日から始めましょう。</p>
+    </section>
 
-    <footer class="foot">
-      <span>データはあなた専用に保存されます</span>
-      <button id="logoutBtn" class="linklike" type="button">ログアウト</button>
-    </footer>
+    <!-- ===== 設定 ===== -->
+    <section class="view" id="view-settings">
+      <header class="home-head"><h1>設定</h1></header>
+
+      <section class="card">
+        <h2>定番タスク（毎日/曜日ごとに自動で出る）</h2>
+        <p class="hint">1行に1つ。<code>タスク名</code> だけなら毎日。曜日を絞るなら <code>タスク名 @mon,wed,fri</code>（sun mon tue wed thu fri sat）。</p>
+        <textarea id="templates" placeholder="ストレッチ&#10;英語の勉強 @mon,wed,fri&#10;水を2L飲む"></textarea>
+        <button id="saveTemplates" class="wide">定番タスクを保存</button>
+      </section>
+
+      <section class="card">
+        <h2>アカウント</h2>
+        <button id="logoutBtn" class="wide danger">ログアウト</button>
+      </section>
+
+      <p class="foot">My Day — あなた専用の1日</p>
+    </section>
+
   </main>
+
+  <!-- 下タブナビ -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="home"><span class="ic">🏠</span><span>今日</span></button>
+    <button class="nav-btn" data-view="records"><span class="ic">📖</span><span>きろく</span></button>
+    <button class="nav-btn" data-view="settings"><span class="ic">⚙️</span><span>設定</span></button>
+  </nav>
 
   <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>

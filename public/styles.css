@@ -7,8 +7,10 @@
   --accent: #4f46e5;
   --accent-soft: #eef2ff;
   --done: #9aa2af;
+  --danger: #e5484d;
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --radius: 16px;
+  --nav-h: 64px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -20,6 +22,7 @@
     --accent: #8b8cf7;
     --accent-soft: #20222c;
     --done: #5c636e;
+    --danger: #f87171;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
   }
 }
@@ -37,18 +40,20 @@ body {
 .app {
   max-width: 640px;
   margin: 0 auto;
-  padding: 28px 20px 80px;
+  padding: 28px 20px calc(var(--nav-h) + 40px);
 }
 
-.top {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-.eyebrow { margin: 0; color: var(--muted); font-size: 13px; letter-spacing: .04em; }
+/* ===== 画面切り替え ===== */
+.view { display: none; }
+.view.active { display: block; animation: fade .22s ease; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+
+/* ===== ヘッダー ===== */
+.home-head { margin-bottom: 20px; }
+.greeting { margin: 0; color: var(--muted); font-size: 14px; }
 h1 { margin: 2px 0 0; font-size: 26px; font-weight: 700; }
 
+/* ===== カード ===== */
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -59,41 +64,47 @@ h1 { margin: 2px 0 0; font-size: 26px; font-weight: 700; }
 }
 .card > h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
 
-/* タスク一覧 */
+/* ===== 進捗（リング） ===== */
+.progress-card { display: flex; align-items: center; gap: 18px; }
+.ring { position: relative; width: 64px; height: 64px; flex: 0 0 auto; }
+.ring svg { width: 64px; height: 64px; transform: rotate(-90deg); }
+.ring-bg { fill: none; stroke: var(--line); stroke-width: 7; }
+.ring-fg {
+  fill: none; stroke: var(--accent); stroke-width: 7; stroke-linecap: round;
+  stroke-dasharray: 163.4; stroke-dashoffset: 163.4;
+  transition: stroke-dashoffset .5s ease;
+}
+.ring-pct {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 14px; font-weight: 700;
+}
+.progress-text { display: flex; flex-direction: column; }
+.progress-text strong { font-size: 16px; }
+.progress-text span { font-size: 13px; color: var(--muted); }
+
+/* ===== タスク ===== */
 .tasks { list-style: none; margin: 0; padding: 0; }
 .tasks li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 8px;
-  border-radius: 10px;
-  transition: background .15s;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 8px; border-radius: 10px; transition: background .15s;
 }
 .tasks li:hover { background: var(--accent-soft); }
 .tasks li:hover .del { opacity: 1; }
 
 .check {
-  appearance: none;
-  width: 22px; height: 22px;
-  flex: 0 0 auto;
-  border: 2px solid var(--line);
-  border-radius: 7px;
-  cursor: pointer;
-  position: relative;
-  transition: border-color .15s, background .15s;
+  appearance: none; width: 22px; height: 22px; flex: 0 0 auto;
+  border: 2px solid var(--line); border-radius: 7px; cursor: pointer;
+  position: relative; transition: border-color .15s, background .15s;
 }
 .check:checked { background: var(--accent); border-color: var(--accent); }
 .check:checked::after {
-  content: "";
-  position: absolute; left: 6px; top: 2px;
-  width: 5px; height: 10px;
-  border: solid #fff; border-width: 0 2px 2px 0;
+  content: ""; position: absolute; left: 6px; top: 2px;
+  width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 
 .task-title {
-  flex: 1;
-  border: none; background: transparent; color: inherit;
+  flex: 1; border: none; background: transparent; color: inherit;
   font-size: 16px; padding: 2px 0; outline: none;
 }
 .tasks li.is-done .task-title { color: var(--done); text-decoration: line-through; }
@@ -104,30 +115,30 @@ h1 { margin: 2px 0 0; font-size: 26px; font-weight: 700; }
   cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px;
   transition: opacity .15s, color .15s;
 }
-.del:hover { color: #e5484d; }
+.del:hover { color: var(--danger); }
 
 /* 追加フォーム */
 .add { display: flex; gap: 8px; margin-top: 12px; }
 .add input {
-  flex: 1;
-  border: 1px solid var(--line); border-radius: 10px;
-  background: var(--bg); color: inherit;
-  padding: 10px 12px; font-size: 15px; outline: none;
+  flex: 1; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: inherit; padding: 10px 12px; font-size: 15px; outline: none;
 }
 .add input:focus { border-color: var(--accent); }
 
+/* ===== ボタン ===== */
 button {
-  font: inherit; cursor: pointer;
-  border: none; border-radius: 10px;
-  background: var(--accent); color: #fff;
-  padding: 10px 16px; font-size: 14px; font-weight: 600;
+  font: inherit; cursor: pointer; border: none; border-radius: 10px;
+  background: var(--accent); color: #fff; padding: 10px 16px; font-size: 14px; font-weight: 600;
   transition: filter .15s, transform .05s;
 }
 button:hover { filter: brightness(1.05); }
 button:active { transform: translateY(1px); }
 button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+button.wide { width: 100%; padding: 12px; }
+button.danger { background: transparent; color: var(--danger); border: 1px solid var(--line); }
+button.danger:hover { background: var(--danger); color: #fff; filter: none; }
 
-/* 気分 */
+/* ===== 気分 ===== */
 .mood { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .mood > span { font-size: 13px; color: var(--muted); }
 .mood-row { display: flex; gap: 6px; }
@@ -137,37 +148,65 @@ button.ghost { background: transparent; color: var(--accent); border: 1px solid 
 }
 .mood-btn.active { border-color: var(--accent); background: var(--accent-soft); }
 
-/* 日記 */
+/* ===== 日記 ===== */
 textarea {
-  width: 100%;
-  min-height: 110px;
+  width: 100%; min-height: 110px;
   border: 1px solid var(--line); border-radius: 12px;
-  background: var(--bg); color: inherit;
-  padding: 12px 14px; font: inherit; resize: vertical; outline: none;
+  background: var(--bg); color: inherit; padding: 12px 14px; font: inherit; resize: vertical; outline: none;
 }
 textarea:focus { border-color: var(--accent); }
 .save-state { margin: 8px 2px 0; font-size: 12px; color: var(--muted); height: 16px; }
 .save-state.saving { color: var(--accent); }
 
-/* 定番タスク */
-details.card > summary { cursor: pointer; font-size: 15px; font-weight: 600; color: var(--ink); list-style: none; }
-details.card > summary::-webkit-details-marker { display: none; }
-details.card[open] > summary { margin-bottom: 12px; }
+/* ===== きろく ===== */
+.records { display: flex; flex-direction: column; gap: 14px; }
+.rec {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px 18px;
+}
+.rec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rec-date { font-weight: 700; font-size: 15px; }
+.rec-meta { font-size: 12px; color: var(--muted); }
+.rec-mood { font-size: 18px; }
+.rec ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.rec ul li { font-size: 14px; color: var(--ink); padding: 2px 0; }
+.rec ul li.done { color: var(--done); }
+.rec ul li .box { margin-right: 6px; }
+.rec-diary { margin-top: 10px; font-size: 14px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 10px; white-space: pre-wrap; }
+
+/* ===== 定番タスク・設定 ===== */
 .hint { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
 code { background: var(--accent-soft); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
-#saveTemplates { margin-top: 10px; }
 
 .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 8px; }
-.foot { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; display: flex; gap: 12px; justify-content: center; align-items: center; }
-.linklike { background: none; border: none; color: var(--muted); text-decoration: underline; padding: 0; font-size: 12px; font-weight: 400; }
-.linklike:hover { color: var(--accent); filter: none; }
+.foot { text-align: center; font-size: 12px; color: var(--muted); margin-top: 20px; }
 .hidden { display: none !important; }
+.wide.ghost { margin-top: 4px; }
+
+/* ===== 下タブナビ ===== */
+.bottom-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; justify-content: space-around;
+  max-width: 640px; margin: 0 auto;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  backdrop-filter: saturate(1.2) blur(10px);
+  border-top: 1px solid var(--line);
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+}
+.nav-btn {
+  background: none; border: none; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 11px; font-weight: 600; padding: 4px 20px; border-radius: 12px;
+}
+.nav-btn:hover { filter: none; }
+.nav-btn .ic { font-size: 20px; filter: grayscale(.4) opacity(.7); transition: filter .15s; }
+.nav-btn.active { color: var(--accent); }
+.nav-btn.active .ic { filter: none; }
 
 .toast {
-  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translateX(-50%);
   background: var(--ink); color: var(--bg);
   padding: 10px 18px; border-radius: 999px; font-size: 14px;
-  box-shadow: var(--shadow); z-index: 10;
-  animation: pop .2s ease;
+  box-shadow: var(--shadow); z-index: 30; animation: pop .2s ease; max-width: 90vw; text-align: center;
 }
 @keyframes pop { from { opacity: 0; transform: translate(-50%, 8px); } }
