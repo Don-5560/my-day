@@ -1,0 +1,7 @@
+{
+  "recurring": [
+    { "title": "水を2L飲む", "days": "daily" },
+    { "title": "ストレッチ 5分", "days": "daily" },
+    { "title": "英語の勉強", "days": ["mon", "wed", "fri"] }
+  ]
+}

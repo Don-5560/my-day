@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Day — 今日のやること & 日記</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div>
+        <p class="eyebrow">今日</p>
+        <h1 id="dateLabel">—</h1>
+      </div>
+      <button id="exportBtn" class="ghost" title="直近の記録をコピー">AI用にコピー</button>
+    </header>
+
+    <!-- 今日のやること -->
+    <section class="card">
+      <h2>やること</h2>
+      <ul id="taskList" class="tasks"></ul>
+      <form id="addForm" class="add">
+        <input id="addInput" type="text" placeholder="やることを追加…" autocomplete="off" />
+        <button type="submit">追加</button>
+      </form>
+      <p id="taskEmpty" class="empty hidden">まだ何もありません。定番タスクを設定するか、上から追加してください。</p>
+    </section>
+
+    <!-- やったことの記録（日記） -->
+    <section class="card">
+      <h2>やったこと・ふりかえり</h2>
+      <div class="mood">
+        <span>気分</span>
+        <div id="moodRow" class="mood-row">
+          <button data-mood="😄" class="mood-btn">😄</button>
+          <button data-mood="🙂" class="mood-btn">🙂</button>
+          <button data-mood="😐" class="mood-btn">😐</button>
+          <button data-mood="😕" class="mood-btn">😕</button>
+          <button data-mood="😫" class="mood-btn">😫</button>
+        </div>
+      </div>
+      <textarea id="diary" placeholder="今日やったこと、感じたこと、明日への一言…"></textarea>
+      <p id="saveState" class="save-state">保存済み</p>
+    </section>
+
+    <!-- 定番タスク -->
+    <details class="card">
+      <summary>定番タスク（毎日/曜日ごとに自動で出る）</summary>
+      <p class="hint">1行に1つ。<code>タスク名</code> だけなら毎日。曜日を絞るなら <code>タスク名 @mon,wed,fri</code>（sun mon tue wed thu fri sat）。</p>
+      <textarea id="templates" placeholder="ストレッチ&#10;英語の勉強 @mon,wed,fri&#10;水を2L飲む"></textarea>
+      <button id="saveTemplates">保存</button>
+    </details>
+
+    <footer class="foot">
+      <span>データは <code>data/</code> のJSONに保存 → Claudeも同じファイルを読み書きできます</span>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

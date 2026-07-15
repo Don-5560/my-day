@@ -1,0 +1,14 @@
+{
+  "name": "my-day",
+  "version": "0.1.0",
+  "description": "自分に合った1日のやることリストと、やったことの日記を残せるアプリ。Claude(MCP)と連携できる。",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "mcp": "node mcp/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "express": "^4.21.2"
+  }
+}
