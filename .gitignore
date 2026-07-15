@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+
+# ローカルのSQLite（データは各自の環境/本番DBに持つ）
+data/*.db
+data/*.db-*

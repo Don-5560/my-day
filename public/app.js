@@ -6,6 +6,10 @@ const api = async (url, opts) => {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
+  if (res.status === 401) {
+    location.href = "/login"; // ログイン切れ → ログイン画面へ
+    throw new Error("要ログイン");
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
 };
@@ -183,6 +187,10 @@ document.querySelectorAll(".mood-btn").forEach((b) =>
 );
 $("#saveTemplates").addEventListener("click", saveTemplates);
 $("#exportBtn").addEventListener("click", copyForAI);
+$("#logoutBtn").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.href = "/login";
+});
 
 load().catch((e) => toast("読み込み失敗: " + e.message));
 loadTemplates().catch(() => {});

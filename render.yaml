@@ -1,0 +1,22 @@
+# Render 用の設定（Blueprint）。
+# GitHubリポジトリを Render につなぐと、この内容でサービスが作られる。
+# 秘密の値（パスワード等）はここには書かず、Renderのダッシュボードで設定する。
+services:
+  - type: web
+    name: my-day
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # 下の4つは Render のダッシュボードで自分で入力する（sync:false）
+      - key: APP_PASSWORD # ログインのパスワード
+        sync: false
+      - key: SESSION_SECRET # クッキー署名用のランダムな長い文字列
+        sync: false
+      - key: DATABASE_URL # Turso の libsql://... URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN # Turso のトークン
+        sync: false

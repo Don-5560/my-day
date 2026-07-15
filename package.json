@@ -7,8 +7,13 @@
     "start": "node server.js",
     "mcp": "node mcp/server.js"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "cookie-parser": "^1.4.7",
     "express": "^4.21.2"
   }
 }
