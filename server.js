@@ -186,8 +186,8 @@ app.get("/api/day", wrap(async (req, res) => {
 
 // タスク追加
 app.post("/api/tasks", wrap(async (req, res) => {
-  const { date = store.today(), title, source } = req.body;
-  const { day } = await store.addTask(date, title, source);
+  const { date = store.today(), title, source, time } = req.body;
+  const { day } = await store.addTask(date, title, source, time);
   res.json(day);
 }));
 
@@ -234,6 +234,23 @@ app.get("/api/data/:key", wrap(async (req, res) => {
 }));
 app.put("/api/data/:key", wrap(async (req, res) => {
   res.json(await store.saveDoc(req.params.key, req.body));
+}));
+
+// お金の管理（残高・収入・支出）。取引はSQLテーブルなので専用エンドポイントで扱う。
+app.get("/api/finance", wrap(async (req, res) => {
+  res.json(await store.financeSummary(req.query.month || undefined));
+}));
+app.put("/api/finance/initial", wrap(async (req, res) => {
+  res.json(await store.setInitialBalance(Number(req.body?.amount)));
+}));
+app.get("/api/transactions", wrap(async (req, res) => {
+  res.json(await store.listTransactions({ month: req.query.month, type: req.query.type }));
+}));
+app.post("/api/transactions", wrap(async (req, res) => {
+  res.json(await store.addTransaction(req.body));
+}));
+app.delete("/api/transactions/:id", wrap(async (req, res) => {
+  res.json(await store.removeTransaction(req.params.id));
 }));
 
 // AIに貼り付ける用のMarkdown

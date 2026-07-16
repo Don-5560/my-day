@@ -4,7 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>LifeOS — 人生をゲーム化する</title>
-  <meta name="theme-color" content="#05060A" />
+  <meta name="theme-color" content="#F3F5F9" />
+  <!-- テーマを描画前に確定させて、ちらつきを防ぐ -->
+  <script>
+    try {
+      var t = localStorage.getItem("lifeos-theme") || "light";
+      document.documentElement.setAttribute("data-theme", t);
+      var mc = document.querySelector('meta[name="theme-color"]');
+      if (mc) mc.setAttribute("content", t === "dark" ? "#05060A" : "#F3F5F9");
+    } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
@@ -33,6 +42,9 @@
 
   <!-- モバイル: 下タブナビ -->
   <nav class="bottom-nav glass" id="bottomNav"></nav>
+
+  <!-- 右スライドインのドロワーメニュー -->
+  <div id="drawerWrap"></div>
 
   <div id="toastWrap"></div>
   <div id="modalWrap"></div>

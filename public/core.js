@@ -25,12 +25,32 @@ const fmtShort = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
 const fmtYen = (n) => "¥" + Number(n || 0).toLocaleString();
 const monthKey = (iso) => iso.slice(0, 7);
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}` : `${m}分`);
+const fmtHM = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? " " + (m % 60) + "m" : ""}` : `${m}m`); // 2h 15m / 45m
+const fmtDateFull = (iso) => { const d = new Date(iso + "T00:00:00"); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${WD[d.getDay()]})`; };
+// 相対時間（「2時間前」など）
+function relTime(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return "たった今";
+  const m = Math.floor(s / 60); if (m < 60) return `${m}分前`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}時間前`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}日前`;
+  return `${Math.floor(d / 7)}週間前`;
+}
+
+// ===== テーマ（ライト/ダーク） =====
+function currentTheme() { return document.documentElement.getAttribute("data-theme") || "light"; }
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  try { localStorage.setItem("lifeos-theme", t); } catch (e) {}
+  const mc = document.querySelector('meta[name="theme-color"]');
+  if (mc) mc.setAttribute("content", t === "dark" ? "#05060A" : "#F3F5F9");
+}
 
 // ===== データ（Tursoに保存される各モジュールのJSON文書） =====
 
 const DB = {};
 const DOC_DEFAULTS = {
-  settings: { todayGoal: "", monthGoal: "", salesGoal: 300000 },
+  settings: { name: "しどう", todayGoal: "", monthGoal: "", salesGoal: 300000, dailyStudyGoalMin: 360, dailySalesGoal: 20000 },
   todos: { items: [] },
   study: { logs: [] },          // {id,date,min,subject,src}
   habits: { list: [], checks: {} },
@@ -48,11 +68,13 @@ const HABIT_SEED = ["筋トレ", "英語", "SNS投稿", "読書", "早寝"];
 
 async function loadAll() {
   const keys = Object.keys(DOC_DEFAULTS);
-  const [day, ...docs] = await Promise.all([
+  const [day, finance, ...docs] = await Promise.all([
     api("/api/day"),
+    api("/api/finance"),
     ...keys.map((k) => api("/api/data/" + k)),
   ]);
   DB.day = day;
+  DB.finance = finance; // 残高・今月収支（サーバー計算値。docではないので別枠で持つ）
   keys.forEach((k, i) => { DB[k] = docs[i] ?? structuredClone(DOC_DEFAULTS[k]); });
   // 初回シード
   if (!DB.learning.items.length) {
@@ -67,6 +89,8 @@ async function loadAll() {
 async function saveDb(key) {
   await api("/api/data/" + key, { method: "PUT", body: JSON.stringify(DB[key]) });
 }
+// お金の残高・今月収支を取り直す（取引を追加/削除したあとに呼ぶ）
+async function refreshFinance() { DB.finance = await api("/api/finance"); }
 
 // ===== XP・レベル =====
 
@@ -158,6 +182,8 @@ function fieldHTML(f, val) {
       return label + `<input type="number" name="${f.key}" value="${esc(v)}" placeholder="${esc(f.placeholder || "")}" inputmode="numeric">`;
     case "date":
       return label + `<input type="date" name="${f.key}" value="${esc(v)}">`;
+    case "time":
+      return label + `<input type="time" name="${f.key}" value="${esc(v)}">`;
     default:
       return label + `<input type="${f.type === "url" ? "url" : "text"}" name="${f.key}" value="${esc(v)}" placeholder="${esc(f.placeholder || "")}">`;
   }
@@ -249,5 +275,15 @@ function statCard(ic, val, label, sub = "") {
     <span class="s-ic">${icon(ic, 17)}</span>
     <span class="s-val">${val}${sub ? `<small>${esc(sub)}</small>` : ""}</span>
     <span class="s-label">${esc(label)}</span>
+  </div>`;
+}
+
+// ホーム用の統計カード（ラベル上・値大・サブ文言・アイコン右上）
+function homeStat(label, val, sub, ic) {
+  return `<div class="hstat">
+    <span class="hs-ic">${icon(ic, 15)}</span>
+    <div class="hs-label">${esc(label)}</div>
+    <div class="hs-val">${val}</div>
+    ${sub ? `<div class="hs-sub">${esc(sub)}</div>` : ""}
   </div>`;
 }

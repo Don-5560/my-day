@@ -5,11 +5,18 @@ window.VIEWS = window.VIEWS || {};
 
 const NAV_GROUPS = [
   { label: "メイン", items: ["home", "todo", "time", "report", "habits"] },
-  { label: "ワーク", items: ["projects", "outreach", "sales", "portfolio", "learning"] },
+  { label: "ワーク", items: ["projects", "outreach", "sales", "money", "portfolio", "learning"] },
   { label: "グロース", items: ["goals", "badges", "analytics", "calendar"] },
   { label: "", items: ["settings"] },
 ];
-const BOTTOM_NAV = ["home", "todo", "time", "report", "menu"];
+const BOTTOM_NAV = ["time", "todo", "home", "report", "menu"];
+// 右ドロワーの構成（モバイルの「メニュー」から開く）
+const DRAWER_GROUPS = [
+  { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "売上・収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
+  { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"]] },
+  { label: "人生・習慣", items: [["habits", "習慣トラッカー"], ["goals", "目標管理"], ["badges", "実績・バッジ"]] },
+  { label: "分析・レポート", items: [["analytics", "分析・レポート"], ["calendar", "カレンダー"]] },
+];
 
 const CAT_COLORS = { "勉強": "var(--accent)", "制作": "var(--violet)", "営業": "var(--green)", "生活": "var(--amber)", "趣味": "var(--pink)" };
 const CATS = Object.keys(CAT_COLORS);
@@ -38,110 +45,185 @@ function buildNav() {
     ${g.label ? `<div class="nav-label">${esc(g.label)}</div>` : ""}
     ${g.items.map((v) => `<button class="nav-item" data-view="${v}">${icon(VIEWS[v].icon, 17)}${esc(VIEWS[v].title)}</button>`).join("")}
   </div>`).join("");
-  $("#bottomNav").innerHTML = BOTTOM_NAV.map((v) =>
-    `<button class="nav-item" data-view="${v}">${icon(VIEWS[v].icon, 20)}<span>${esc(VIEWS[v].title)}</span></button>`).join("");
-  $$(".nav-item").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
+  $("#bottomNav").innerHTML = BOTTOM_NAV.map((v) => {
+    const isMenu = v === "menu";
+    const label = isMenu ? "メニュー" : VIEWS[v].title;
+    const ic = isMenu ? "menu" : VIEWS[v].icon;
+    const cls = v === "home" ? "nav-item center" : "nav-item";
+    return `<button class="${cls}" data-view="${v}">${icon(ic, v === "home" ? 24 : 20)}<span>${esc(label)}</span></button>`;
+  }).join("");
+  $$(".nav-item").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.view === "menu") openDrawer();
+    else go(b.dataset.view);
+  }));
+}
+
+// ===== 右ドロワーメニュー =====
+
+function openDrawer() {
+  const wrap = $("#drawerWrap");
+  wrap.innerHTML = `
+    <div class="drawer-overlay" id="drawerOverlay"></div>
+    <aside class="drawer" id="drawer">
+      <div class="drawer-head"><h3>ダッシュボード</h3><button class="icon-btn" id="drawerClose">${icon("x", 18)}</button></div>
+      ${DRAWER_GROUPS.map((g) => `<div class="drawer-group">
+        <div class="drawer-label">${esc(g.label)}</div>
+        ${g.items.map(([v, label]) => `<button class="drawer-item" data-view="${v}">
+          <span class="di-ic">${icon(VIEWS[v] ? VIEWS[v].icon : "grid", 16)}</span>
+          <span class="di-label">${esc(label)}</span>
+          <span class="di-chev">${icon("chevR", 16)}</span></button>`).join("")}
+      </div>`).join("")}
+      <hr class="drawer-sep">
+      <button class="drawer-item" data-view="settings">
+        <span class="di-ic">${icon("settings", 16)}</span>
+        <span class="di-label">設定</span>
+        <span class="di-chev">${icon("chevR", 16)}</span></button>
+    </aside>`;
+  requestAnimationFrame(() => {
+    const ov = $("#drawerOverlay"), dr = $("#drawer");
+    if (ov) ov.classList.add("open");
+    if (dr) dr.classList.add("open");
+  });
+  $("#drawerOverlay").addEventListener("click", closeDrawer);
+  $("#drawerClose").addEventListener("click", closeDrawer);
+  $$("#drawer .drawer-item").forEach((b) => b.addEventListener("click", () => { closeDrawer(); go(b.dataset.view); }));
+}
+
+function closeDrawer() {
+  const ov = $("#drawerOverlay"), dr = $("#drawer");
+  if (ov) ov.classList.remove("open");
+  if (dr) dr.classList.remove("open");
+  setTimeout(() => { const w = $("#drawerWrap"); if (w) w.innerHTML = ""; }, 320);
 }
 
 // ===== ホーム =====
+
+// 最近の活動のカテゴリバッジ（XPイベントのwhyから推定）
+function activityBadge(why) {
+  if (/習慣/.test(why)) return { label: "習慣", cls: "grn" };
+  if (/勉強|ポモ/.test(why)) return { label: "学習", cls: "acc" };
+  if (/売上|入金/.test(why)) return { label: "営業", cls: "amb" };
+  if (/日報/.test(why)) return { label: "生活", cls: "vio" };
+  if (/Todo|タスク|案件|バッジ/.test(why)) return { label: "制作", cls: "pnk" };
+  return null;
+}
+// 過去の最長連続記録
+function bestStreakVal() {
+  const map = activityMap();
+  const days = Object.keys(map).filter((k) => map[k] > 0).sort();
+  let best = 0, run = 0, prev = null;
+  for (const d of days) {
+    run = prev && (new Date(d) - new Date(prev)) === 86400000 ? run + 1 : 1;
+    best = Math.max(best, run); prev = d;
+  }
+  return best;
+}
 
 VIEWS.home = {
   title: "ホーム", icon: "home",
   render(main) {
     const S = DB.settings;
-    const tasks = DB.day.tasks, done = tasks.filter((t) => t.done).length;
-    const dayPct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+    const tasks = [...DB.day.tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+    const done = DB.day.tasks.filter((t) => t.done).length;
+    const total = DB.day.tasks.length;
+    const dayPct = total ? Math.round((done / total) * 100) : 0;
     const studyToday = DB.study.logs.filter((l) => l.date === todayStr()).reduce((s, l) => s + l.min, 0);
-    const salesMonth = DB.sales.logs.filter((l) => monthKey(l.date) === monthKey(todayStr())).reduce((s, l) => s + l.amount, 0);
-    const activeProjects = DB.projects.items.filter((p) => (p.progress || 0) < 100).length;
-    const pf = DB.portfolio.items;
-    const pfPct = pf.length ? Math.round(pf.reduce((s, p) => s + (p.progress || 0), 0) / pf.length) : 0;
-    const L = levelInfo();
-
-    // 今週やること（期限が今日〜6日後 or 期限切れの未完了Todo）
-    const week = DB.todos.items
-      .filter((t) => !t.done && t.due && t.due <= todayStr(6))
-      .sort((a, b) => a.due.localeCompare(b.due)).slice(0, 8);
+    const salesToday = DB.sales.logs.filter((l) => l.date === todayStr()).reduce((s, l) => s + l.amount, 0);
+    const acts = [...DB.xp.events].slice(-6).reverse();
 
     main.innerHTML = `
-      <div class="page-head">
-        <div><p class="eyebrow">Dashboard</p><h1>${fmtJP(todayStr())}</h1></div>
-        <div class="clock" id="clock"></div>
+      <div class="greet">
+        <div class="greet-top">
+          <h1 class="greet-hello">おかえり、${esc(S.name || "しどう")} <span class="wave">👋</span></h1>
+        </div>
+        <div class="greet-sub">
+          <p>${esc(S.todayGoal) || "今日も最高の1日にしよう。"}</p>
+          <span class="greet-date">${fmtDateFull(todayStr())}</span>
+        </div>
       </div>
 
-      <div class="stat-grid">
-        ${statCard("zap", `Lv ${L.lvl}`, `${L.cur} / ${L.need} XP`)}
-        ${statCard("flame", streak(), "連続記録", "日")}
-        ${statCard("timer", fmtMin(studyToday) || "0分", "今日の勉強")}
-        ${statCard("yen", fmtYen(salesMonth), "今月の売上")}
-        ${statCard("briefcase", activeProjects, "進行中の案件", "件")}
-        ${statCard("layers", pfPct + "%", "ポートフォリオ完成率")}
-      </div>
-
-      <div class="grid2">
-        <div class="card" id="goalCard">
-          <h2>${icon("target", 15)} 目標</h2>
-          <div style="display:flex;flex-direction:column;gap:12px">
-            <div><span class="pill acc">今日</span><p style="margin:6px 0 0;font-size:14.5px">${esc(S.todayGoal) || '<span class="muted">未設定 — クリックして設定</span>'}</p></div>
-            <div><span class="pill">今月</span><p style="margin:6px 0 0;font-size:14.5px">${esc(S.monthGoal) || '<span class="muted">未設定</span>'}</p></div>
-          </div>
+      <div class="card task-summary">
+        <div class="ts-main">
+          <div class="ts-label">今日のタスク</div>
+          <div class="ts-count"><span id="tsCount">${done}</span> <small>/ <span id="tsTotal">${total}</span> 完了</small></div>
+          <div class="bar"><i id="tsBar" style="width:${dayPct}%"></i></div>
         </div>
-
-        <div class="card">
-          <h2>${icon("check", 15)} 今日のやること <span style="margin-left:auto" class="pill ${dayPct === 100 && tasks.length ? "grn" : "acc"}">${done}/${tasks.length}</span></h2>
-          <div id="dayTasks">${tasks.map((t) => `
-            <label class="row ${t.done ? "done" : ""}">
-              <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
-              <span class="row-title">${esc(t.title)}</span>
-              ${t.source === "template" ? '<span class="pill">定番</span>' : t.source === "ai" ? '<span class="pill acc">AI</span>' : ""}
-            </label>`).join("") || '<p class="empty">今日のタスクはまだありません</p>'}
-          </div>
-          <form id="quickAdd" style="display:flex;gap:8px;margin-top:10px">
-            <input type="text" placeholder="やることを追加…" id="quickInput" autocomplete="off">
-            <button class="btn sm" type="submit">${icon("plus", 14)}</button>
-          </form>
-        </div>
+        <button class="btn ghost sm" id="addTask">${icon("plus", 14)} 追加</button>
       </div>
 
       <div class="card">
-        <h2>${icon("calendar", 15)} 今週やること</h2>
-        ${week.map((t) => {
-          const over = t.due < todayStr();
-          return `<div class="row">
-            <span style="color:${CAT_COLORS[t.cat] || "var(--muted)"}">${icon("chevR", 15)}</span>
-            <span class="row-title">${esc(t.title)}</span>
-            <span class="pill ${over ? "red" : ""}">${over ? "期限切れ " : ""}${fmtShort(t.due)}</span>
+        <div class="card-head"><h2>${icon("calendar", 15)} 今日の予定</h2></div>
+        <div id="schedule">${tasks.map((t) => `
+          <div class="list-item ${t.done ? "done" : ""}" data-row="${t.id}">
+            <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
+            ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
+            <div class="li-body"><div class="li-title">${esc(t.title)}</div></div>
+            <div class="li-right">
+              <button class="icon-btn danger row-del" data-del="${t.id}" aria-label="削除">${icon("trash", 14)}</button>
+            </div>
+          </div>`).join("") || '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>'}
+        </div>
+      </div>
+
+      <div class="home-stats">
+        ${homeStat("勉強時間 (今日)", studyToday ? fmtHM(studyToday) : "0m", "目標: " + fmtHM(S.dailyStudyGoalMin || 360), "timer")}
+        ${homeStat("売上 (今日)", fmtYen(salesToday), "目標: " + fmtYen(S.dailySalesGoal || 20000), "yen")}
+        ${homeStat("連続記録", streak() + "日", "ベスト: " + bestStreakVal() + "日", "flame")}
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>${icon("flame", 15)} 最近の活動</h2>
+          <button class="link-more" data-go="analytics">すべて見る ${icon("chevR", 12)}</button></div>
+        ${acts.map((e) => {
+          const b = activityBadge(e.why);
+          return `<div class="list-item">
+            <div class="li-body"><div class="li-title" style="white-space:normal">${esc(e.why)}</div></div>
+            <div class="li-right">${b ? `<span class="pill ${b.cls}">${b.label}</span>` : ""}<span class="li-meta">${relTime(e.ts)}</span></div>
           </div>`;
-        }).join("") || '<p class="empty">今週が期限のTodoはありません。Todoタブで期限を付けると、ここに出ます。</p>'}
+        }).join("") || '<p class="empty">まだ活動がありません。タスクを完了するとここに出ます。</p>'}
       </div>`;
 
-    // 時計
-    const tick = () => { const c = $("#clock"); if (c) { const d = new Date(); c.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":"); } };
-    tick();
+    // 今日のタスクの進捗表示をその場で更新（再描画しない）
+    const refreshSummary = () => {
+      const d = DB.day.tasks.filter((t) => t.done).length, tt = DB.day.tasks.length;
+      const c = $("#tsCount"), tot = $("#tsTotal"), bar = $("#tsBar");
+      if (c) c.textContent = d;
+      if (tot) tot.textContent = tt;
+      if (bar) bar.style.width = (tt ? Math.round((d / tt) * 100) : 0) + "%";
+    };
 
-    // 目標編集
-    $("#goalCard").addEventListener("click", async () => {
-      const v = await modal("目標を設定", [
-        { key: "todayGoal", label: "今日の目標", type: "text", placeholder: "例: LP制作を2時間進める" },
-        { key: "monthGoal", label: "今月の目標", type: "text", placeholder: "例: 初案件を獲得する" },
-      ], S);
-      if (!v) return;
-      Object.assign(S, v); await saveDb("settings"); rerender();
-    });
-
-    // 今日のタスク
-    $$("#dayTasks [data-task]").forEach((cb) => cb.addEventListener("change", async () => {
-      DB.day = await api("/api/tasks/" + cb.dataset.task, { method: "PATCH", body: JSON.stringify({ done: cb.checked }) });
+    // チェック: その場でトグル（再描画やチェック位置へのジャンプをしない）
+    $$("#schedule [data-task]").forEach((cb) => cb.addEventListener("change", async () => {
+      const row = cb.closest(".list-item");
+      row.classList.toggle("done", cb.checked);
+      try {
+        DB.day = await api("/api/tasks/" + cb.dataset.task, { method: "PATCH", body: JSON.stringify({ done: cb.checked }) });
+      } catch (err) { cb.checked = !cb.checked; row.classList.toggle("done", cb.checked); toast(err.message, "x"); return; }
+      refreshSummary();
       if (cb.checked) await addXP(XP_RULES.task, "タスク完了");
-      rerender();
     }));
-    $("#quickAdd").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const v = $("#quickInput").value.trim();
-      if (!v) return;
-      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v }) });
+
+    // 削除: その場で行を消す
+    $$("#schedule [data-del]").forEach((b) => b.addEventListener("click", async () => {
+      try { DB.day = await api("/api/tasks/" + b.dataset.del + "?date=" + todayStr(), { method: "DELETE" }); }
+      catch (err) { toast(err.message, "x"); return; }
+      const row = b.closest(".list-item"); if (row) row.remove();
+      refreshSummary();
+      if (!DB.day.tasks.length) $("#schedule").innerHTML = '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>';
+    }));
+
+    // 追加（タイトル＋任意の時刻）
+    $("#addTask").addEventListener("click", async () => {
+      const v = await modal("やることを追加", [
+        { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
+        { key: "time", label: "時刻（任意）", type: "time" },
+      ]);
+      if (!v || !v.title) return;
+      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, time: v.time }) });
       rerender();
     });
+
+    $$("[data-go]", main).forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
   },
 };
 setInterval(() => { const c = $("#clock"); if (c) { const d = new Date(); c.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":"); } }, 1000);

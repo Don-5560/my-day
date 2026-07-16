@@ -342,6 +342,109 @@ VIEWS.sales = {
   },
 };
 
+// ===== お金（残高・収入・支出） =====
+// 取引はサーバーのSQLテーブル。docではないので描画時にAPIから取得する。
+
+const TX_INCOME_CATS = ["Web制作", "Uber", "その他"];
+const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他"];
+const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
+
+VIEWS.money = {
+  title: "お金", icon: "wallet",
+  async render(main) {
+    const mk = monthKey(todayStr());
+    main.innerHTML = `
+      <div class="page-head"><div><p class="eyebrow">Money</p><h1>お金</h1></div></div>
+      <p class="empty">読み込み中…</p>`;
+
+    let fin, txs;
+    try {
+      [fin, txs] = await Promise.all([api("/api/finance"), api("/api/transactions?month=" + mk)]);
+    } catch (e) {
+      main.innerHTML = `<p class="empty">読み込みに失敗しました: ${esc(e.message)}</p>`;
+      return;
+    }
+    DB.finance = fin;
+    if (CURRENT !== "money") return; // 取得中に他画面へ移動していたら描画しない
+
+    const groupByCat = (list) => {
+      const m = {};
+      for (const t of list) m[t.category] = (m[t.category] || 0) + t.amount;
+      return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+    };
+    const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
+    const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div><p class="eyebrow">Money</p><h1>お金</h1></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn ghost" id="setInit">${icon("wallet", 15)} 初期残高</button>
+          <button class="btn" id="addIncome">${icon("plus", 15)} 収入</button>
+          <button class="btn" id="addExpense" style="background:var(--red);border:none">${icon("plus", 15)} 支出</button>
+        </div>
+      </div>
+      <div class="stat-grid">
+        ${statCard("wallet", signedYen(fin.currentBalance), "現在の残高")}
+        ${statCard("chart", fmtYen(fin.incomeThisMonth), "今月の収入")}
+        ${statCard("chart", fmtYen(fin.expenseThisMonth), "今月の支出")}
+        ${statCard(fin.netThisMonth >= 0 ? "trophy" : "clock", signedYen(fin.netThisMonth), "今月の収支")}
+      </div>
+      <div class="grid2">
+        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
+        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <h2>${icon("calendar", 15)} 今月の取引</h2>
+        ${txs.map((t) => {
+          const inc = t.type === "income";
+          return `<div class="row">
+            <span class="pill" style="background:${inc ? "rgba(52,211,153,.15)" : "rgba(248,113,113,.15)"};color:${inc ? "var(--green)" : "var(--red)"}">${esc(t.category)}</span>
+            <span class="row-title small">${fmtShort(t.date)}${t.memo ? " — " + esc(t.memo) : ""}</span>
+            <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+            <button class="icon-btn danger row-del" data-del="${t.id}">${icon("trash", 13)}</button>
+          </div>`;
+        }).join("") || '<p class="empty">今月の取引はまだありません</p>'}
+      </div>`;
+
+    const addTx = async (type, cats) => {
+      const v = await modal(type === "income" ? "収入を追加" : "支出を追加", [
+        { key: "date", label: "日付", type: "date", default: todayStr() },
+        { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
+        { key: "category", label: "カテゴリ", type: "select", options: cats },
+        { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
+      ]);
+      if (!v || !v.amount) return;
+      try {
+        await api("/api/transactions", {
+          method: "POST",
+          body: JSON.stringify({ type, amount: Math.round(v.amount), category: v.category, date: v.date || todayStr(), memo: v.memo }),
+        });
+      } catch (e) { toast(e.message, "x"); return; }
+      toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
+      rerender();
+    };
+    $("#addIncome").addEventListener("click", () => addTx("income", TX_INCOME_CATS));
+    $("#addExpense").addEventListener("click", () => addTx("expense", TX_EXPENSE_CATS));
+    $("#setInit").addEventListener("click", async () => {
+      const v = await modal("初期残高を設定", [
+        { key: "amount", label: "初期残高（円）", type: "money", default: fin.initialBalance, placeholder: "100000" },
+      ]);
+      if (!v) return;
+      try {
+        await api("/api/finance/initial", { method: "PUT", body: JSON.stringify({ amount: Math.round(v.amount) }) });
+      } catch (e) { toast(e.message, "x"); return; }
+      toast("初期残高を設定しました");
+      rerender();
+    });
+    $$("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+      try { await api("/api/transactions/" + b.dataset.del, { method: "DELETE" }); }
+      catch (e) { toast(e.message, "x"); return; }
+      rerender();
+    }));
+  },
+};
+
 // ===== 人生目標 =====
 
 let GOAL_TAB = "y1";
@@ -577,6 +680,18 @@ VIEWS.settings = {
       <div class="page-head"><div><p class="eyebrow">Settings</p><h1>設定</h1></div></div>
 
       <div class="card">
+        <h2>${icon("home", 15)} プロフィール & 外観</h2>
+        <label class="f-label">お名前（ホームの挨拶に使われます）</label>
+        <input type="text" id="sName" value="${esc(DB.settings.name || "")}" placeholder="しどう">
+        <label class="f-label">テーマ</label>
+        <div class="theme-toggle" id="themeToggle">
+          <button type="button" data-theme-val="light" class="${currentTheme() === "light" ? "active" : ""}">${icon("sun", 15)} ライト</button>
+          <button type="button" data-theme-val="dark" class="${currentTheme() === "dark" ? "active" : ""}">${icon("moon", 15)} ダーク</button>
+        </div>
+        <div style="margin-top:14px"><button class="btn" id="saveName">${icon("checkline", 14)} 保存</button></div>
+      </div>
+
+      <div class="card">
         <h2>${icon("target", 15)} 目標設定</h2>
         <label class="f-label">今日の目標</label>
         <input type="text" id="sToday" value="${esc(DB.settings.todayGoal)}" placeholder="例: LP制作を2時間">
@@ -612,6 +727,19 @@ VIEWS.settings = {
     api("/api/templates").then((tpl) => {
       $("#sTpl").value = (tpl.recurring || [])
         .map((t) => (t.days && t.days !== "daily" ? `${t.title} @${t.days.join(",")}` : t.title)).join("\n");
+    });
+
+    // テーマ切替（即時反映＋端末に記憶）
+    $("#themeToggle").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-theme-val]");
+      if (!b) return;
+      applyTheme(b.dataset.themeVal);
+      $$("#themeToggle button").forEach((x) => x.classList.toggle("active", x === b));
+    });
+    $("#saveName").addEventListener("click", async () => {
+      DB.settings.name = $("#sName").value.trim() || "しどう";
+      await saveDb("settings");
+      toast("保存しました");
     });
 
     $("#saveS").addEventListener("click", async () => {
