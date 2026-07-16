@@ -52,6 +52,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* スクロールバーの領域を常に確保し、モーダル開閉で画面が左右にズレないようにする */
+html { scrollbar-gutter: stable; }
+/* モーダル表示中は背景をスクロールさせない（画面が動く感じを防ぐ） */
+body.modal-open { overflow: hidden; }
 body {
   background: var(--bg);
   color: var(--ink);

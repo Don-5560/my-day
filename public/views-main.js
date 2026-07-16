@@ -285,18 +285,22 @@ VIEWS.home = {
       rerender();
     }));
 
-    // 追加（タイトル＋任意の開始/終了時刻・カテゴリー・タグ）
+    // 追加（タイトル＋任意の日付・開始/終了時刻・カテゴリー・タグ）
     $("#addTask").addEventListener("click", async () => {
       const v = await modal("やることを追加", [
         { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
+        { key: "date", label: "日付", type: "date", default: todayStr() },
         { key: "time", label: "開始時刻（任意）", type: "time" },
         { key: "endTime", label: "終了時刻（任意）", type: "time" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
       ]);
       if (!v || !v.title) return;
-      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags }) });
-      rerender();
+      const date = v.date || todayStr();
+      const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags }) });
+      // 今日ぶんならホームを更新。別の日ならホーム(今日)は変えずに知らせるだけ。
+      if (date === todayStr()) { DB.day = day; rerender(); }
+      else toast(fmtShort(date) + " に追加しました");
     });
 
     $("#logActivity").addEventListener("click", logActivity);

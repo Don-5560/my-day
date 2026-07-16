@@ -204,7 +204,8 @@ function modal(title, fields, values = {}) {
         </div>
       </form>
     </div></div>`;
-    const close = (result) => { wrap.innerHTML = ""; resolve(result); };
+    document.body.classList.add("modal-open");
+    const close = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
     wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(null); });
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
     $("#mform").addEventListener("submit", (e) => {
@@ -234,7 +235,8 @@ function confirmBox(msg) {
         <button type="button" class="btn ghost" data-n>キャンセル</button>
         <button type="button" class="btn danger" data-y style="border:none;background:var(--red);color:#fff">削除する</button>
       </div></div></div>`;
-    const close = (r) => { wrap.innerHTML = ""; resolve(r); };
+    document.body.classList.add("modal-open");
+    const close = (r) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(r); };
     wrap.querySelector("[data-y]").addEventListener("click", () => close(true));
     wrap.querySelector("[data-n]").addEventListener("click", () => close(false));
     wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(false); });
