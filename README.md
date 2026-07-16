@@ -115,6 +115,21 @@ Claude Desktop の設定（`~/Library/Application Support/Claude/claude_desktop_
 > Render無料プランは15分アクセスがないとスリープします。Claudeから最初の呼び出しが
 > タイムアウトしたら、もう一度試すか、先にサイトを開いて起こしてください。
 
+### C. ChatGPT（Plus）からも（カスタムGPT + Actions）
+
+ChatGPTはMCPを安定して扱えないので、同じツール群を **REST API** としても公開しています。
+Claudeと同じ `MCP_TOKEN` を流用するので、追加の設定は不要です。
+
+1. ChatGPT（Plus以上）で [chatgpt.com/gpts/editor](https://chatgpt.com/gpts/editor) →「Create」
+2. 「Configure」タブ →「Create new action」
+3. **Authentication** →「API Key」→ Auth Type「Bearer」→ API Key に `MCP_TOKEN` の値を貼る
+4. **Schema** →「Import from URL」に
+   `https://<あなたのapp>.onrender.com/gpt/openapi.json` を入れる（13ツールが読み込まれる）
+5. 保存してGPTと会話するだけ。「今日のやること教えて」「Todo追加して」などで動く
+
+> スキーマURL(`/gpt/openapi.json`)にトークンは含まれず、認証はBearerヘッダーで行われます。
+> URL自体は公開されても中身は読めません（`MCP_TOKEN` を知らないと401）。
+
 ### 使えるツール
 
 | ツール | できること |

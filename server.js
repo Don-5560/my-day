@@ -97,6 +97,71 @@ app.post("/mcp/:token", async (req, res) => {
 app.get("/mcp/:token", (_req, res) => res.status(405).json({ error: "POSTのみ対応" }));
 app.delete("/mcp/:token", (_req, res) => res.status(405).json({ error: "POSTのみ対応" }));
 
+// --- ChatGPT用 REST API（カスタムGPTのActions） ---
+// ChatGPTはMCPを安定して扱えないので、Claudeと同じツール群をRESTとして公開する。
+// 認証は Authorization: Bearer <MCP_TOKEN>（Claude用と同じトークンを流用。新しい秘密は不要）。
+// これらはクッキー認証ミドルウェアの前に置く（ChatGPTはブラウザではなくクッキーを持てない）。
+
+function gptAuthOk(req) {
+  const m = (req.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
+  return m ? mcpTokenOk(m[1]) : false;
+}
+
+// OpenAPI 3.1 スキーマを TOOLS から自動生成（GPTビルダーに読み込ませる）。
+function buildOpenApi(baseUrl) {
+  const paths = {};
+  for (const t of TOOLS) {
+    paths[`/gpt/${t.name}`] = {
+      post: {
+        operationId: t.name,
+        summary: t.description,
+        requestBody: {
+          required: (t.inputSchema.required?.length ?? 0) > 0,
+          content: { "application/json": { schema: t.inputSchema } },
+        },
+        responses: {
+          "200": {
+            description: "OK",
+            content: { "application/json": { schema: { type: "object" } } },
+          },
+        },
+      },
+    };
+  }
+  return {
+    openapi: "3.1.0",
+    info: {
+      title: "LifeOS",
+      description: "LifeOS（1日のやること・日報・Todo・勉強時間・売上・目標）を読み書きする。",
+      version: "0.2.0",
+    },
+    servers: [{ url: baseUrl }],
+    paths,
+    components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } } },
+    security: [{ bearerAuth: [] }],
+  };
+}
+
+// 本番(Render)はプロキシ越しなので https を固定。ローカルはそのまま。
+const baseUrlOf = (req) => `${PROD ? "https" : req.protocol}://${req.get("host")}`;
+
+// スキーマ本体は秘密ではない（トークンは含めない）ので認証不要で配る。GPTビルダーが取得する。
+app.get("/gpt/openapi.json", (req, res) => res.json(buildOpenApi(baseUrlOf(req))));
+
+// 各ツールを1エンドポイントとして公開。POST /gpt/<tool> にJSON引数を渡す。
+app.post("/gpt/:tool", async (req, res) => {
+  if (!MCP_TOKEN) return res.status(503).json({ error: "MCP_TOKEN が未設定です" });
+  if (!gptAuthOk(req)) return res.status(401).json({ error: "無効なトークン" });
+  if (!TOOLS.some((t) => t.name === req.params.tool)) {
+    return res.status(404).json({ error: "未知のツール" });
+  }
+  try {
+    res.json(await callTool(req.params.tool, req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // --- ここから下はログイン必須 ---
 
 app.use((req, res, next) => {
