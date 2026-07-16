@@ -166,7 +166,7 @@ function xpToast(amt, why) {
 // ===== モーダル（フォーム生成） =====
 // fields: [{key,label,type,options?,placeholder?}] type: text|number|money|date|select|textarea|tags|range|url
 
-function fieldHTML(f, val) {
+function fieldHTML(f, val, allValues = {}) {
   const v = val ?? f.default ?? "";
   const label = `<label class="f-label">${esc(f.label)}</label>`;
   switch (f.type) {
@@ -186,6 +186,12 @@ function fieldHTML(f, val) {
       return label + `<input type="date" name="${f.key}" value="${esc(v)}">`;
     case "time":
       return label + `<input type="time" name="${f.key}" value="${esc(v)}">`;
+    case "timerange": // 開始→終了を1行に。startKey/endKey で2つの値を持つ
+      return label + `<div class="f-row2">
+        <input type="time" name="${f.startKey}" value="${esc(allValues[f.startKey] ?? f.startDefault ?? "")}" aria-label="開始">
+        <span class="f-sep">→</span>
+        <input type="time" name="${f.endKey}" value="${esc(allValues[f.endKey] ?? f.endDefault ?? "")}" aria-label="終了">
+      </div>`;
     default:
       return label + `<input type="${f.type === "url" ? "url" : "text"}" name="${f.key}" value="${esc(v)}" placeholder="${esc(f.placeholder || "")}">`;
   }
@@ -197,7 +203,7 @@ function modal(title, fields, values = {}) {
     wrap.innerHTML = `<div class="overlay"><div class="modal">
       <div class="modal-head"><h3>${esc(title)}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
       <form id="mform">
-        ${fields.map((f) => fieldHTML(f, values[f.key])).join("")}
+        ${fields.map((f) => fieldHTML(f, values[f.key], values)).join("")}
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-x>キャンセル</button>
           <button type="submit" class="btn">${icon("checkline", 15)} 保存</button>
@@ -213,6 +219,11 @@ function modal(title, fields, values = {}) {
       const fd = new FormData(e.target);
       const out = {};
       for (const f of fields) {
+        if (f.type === "timerange") { // 2つの time 値を別々のキーで取り出す
+          out[f.startKey] = String(fd.get(f.startKey) ?? "").trim();
+          out[f.endKey] = String(fd.get(f.endKey) ?? "").trim();
+          continue;
+        }
         let v = fd.get(f.key);
         if (f.type === "number" || f.type === "money" || f.type === "range") v = Number(v) || 0;
         else if (f.type === "tags") v = String(v || "").split(/[,、]/).map((s) => s.trim()).filter(Boolean);

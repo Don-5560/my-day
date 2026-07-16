@@ -49,6 +49,7 @@ export const TOOLS = [
         time: { type: "string", description: "開始時刻 HH:MM（任意）" },
         endTime: { type: "string", description: "終了時刻 HH:MM（任意）" },
         cat: { type: "string", enum: CATS, description: "カテゴリー（任意）" },
+        memo: { type: "string", description: "メモ・やった内容（任意）" },
         date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
       },
       required: ["title"],
@@ -71,6 +72,7 @@ export const TOOLS = [
               endTime: { type: "string", description: "終了 HH:MM" },
               cat: { type: "string", enum: CATS },
               tags: { type: "array", items: { type: "string" } },
+              memo: { type: "string" },
             },
             required: ["title"],
           },
@@ -285,8 +287,8 @@ export async function callTool(name, args = {}) {
       return store.getDay(args.date || store.today());
 
     case "add_task": {
-      const { title, time, endTime, cat } = args;
-      const { task, day } = await store.addTask(args.date || store.today(), title, "ai", { time, endTime, cat });
+      const { title, time, endTime, cat, memo } = args;
+      const { task, day } = await store.addTask(args.date || store.today(), title, "ai", { time, endTime, cat, memo });
       return { added: task, tasks: day.tasks };
     }
 

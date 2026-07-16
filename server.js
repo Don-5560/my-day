@@ -186,19 +186,19 @@ app.get("/api/day", wrap(async (req, res) => {
 
 // タスク追加
 app.post("/api/tasks", wrap(async (req, res) => {
-  const { date = store.today(), title, source, time, endTime, cat, tags } = req.body;
-  const { day } = await store.addTask(date, title, source, { time, endTime, cat, tags });
+  const { date = store.today(), title, source, time, endTime, cat, tags, memo } = req.body;
+  const { day } = await store.addTask(date, title, source, { time, endTime, cat, tags, memo });
   res.json(day);
 }));
 
 // タスクの更新: 完了トグル(done) / 項目編集(title,cat,tags,time,endTime,spentMin) / 所要時間加算(addMin)
 app.patch("/api/tasks/:id", wrap(async (req, res) => {
-  const { date = store.today(), done, title, cat, tags, time, endTime, addMin, spentMin } = req.body;
+  const { date = store.today(), done, title, cat, tags, time, endTime, memo, addMin, spentMin } = req.body;
   const { id } = req.params;
   let day;
   if (typeof addMin === "number") day = (await store.addTaskTime(date, id, addMin)).day;
   else if (typeof done === "boolean") day = (await store.setTaskDone(date, id, done)).day;
-  else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, spentMin })).day;
+  else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin })).day;
   res.json(day);
 }));
 

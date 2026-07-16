@@ -181,6 +181,7 @@ VIEWS.home = {
             <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
             <div class="li-body">
               <div class="li-title">${esc(t.title)}</div>
+              ${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
               ${badges ? `<div class="li-tags">${badges}</div>` : ""}
             </div>
             <div class="li-right">
@@ -273,14 +274,14 @@ VIEWS.home = {
       if (!t) return;
       const v = await modal("予定を編集", [
         { key: "title", label: "やること", type: "text" },
-        { key: "time", label: "開始時刻（任意）", type: "time" },
-        { key: "endTime", label: "終了時刻（任意）", type: "time" },
+        { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
+        { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea", placeholder: "例: ヒーロー部分まで完成。残りは明日。" },
       ], t);
       if (!v || !v.title) return;
       try {
-        DB.day = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags }) });
+        DB.day = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo }) });
       } catch (err) { toast(err.message, "x"); return; }
       rerender();
     }));
@@ -290,14 +291,14 @@ VIEWS.home = {
       const v = await modal("やることを追加", [
         { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
         { key: "date", label: "日付", type: "date", default: todayStr() },
-        { key: "time", label: "開始時刻（任意）", type: "time" },
-        { key: "endTime", label: "終了時刻（任意）", type: "time" },
+        { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
+        { key: "memo", label: "メモ（任意）", type: "textarea", placeholder: "例: ◯◯様向け" },
       ]);
       if (!v || !v.title) return;
       const date = v.date || todayStr();
-      const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags }) });
+      const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo }) });
       // 今日ぶんならホームを更新。別の日ならホーム(今日)は変えずに知らせるだけ。
       if (date === todayStr()) { DB.day = day; rerender(); }
       else toast(fmtShort(date) + " に追加しました");
