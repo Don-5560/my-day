@@ -689,13 +689,18 @@ VIEWS.calendar = {
     $$("[data-cv]", main).forEach((b) => b.addEventListener("click", () => { CAL.view = b.dataset.cv; rerender(); }));
 
     const [from, to] = calRange();
+    // 先にグリッドの枠を即描画（日付・XPヒートはローカルデータだけで出せる）。
+    // タスク件数・予定は days の取得後に埋めるので、空白の「読み込み中…」が出ない。
+    CAL._from = from; CAL._to = to; CAL._map = {};
+    calRefreshBody();
+
     let map;
     try { map = await calLoadDays(from, to); }
     catch (e) { $("#calBody").innerHTML = `<p class="empty">読み込み失敗: ${esc(e.message)}</p>`; return; }
     if (CURRENT !== "calendar") return;
 
-    CAL._map = map; CAL._from = from; CAL._to = to;
-    calRefreshBody();
+    CAL._map = map;
+    calRefreshBody(); // タスク件数・予定を反映
     if (CAL._openIso && CAL._openIso >= from && CAL._openIso <= to) calShowDetail(CAL._openIso);
   },
 };
