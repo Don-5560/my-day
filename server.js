@@ -6,6 +6,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import crypto from "node:crypto";
 import path from "node:path";
+import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -18,6 +19,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3939;
 const PROD = process.env.NODE_ENV === "production";
+
+// アセットのキャッシュ破棄用バージョン。public のjs/cssの最終更新時刻から作る。
+// デプロイでファイルが変わると値が変わり、ブラウザは必ず新しいものを取り直す。
+const ASSETS = ["icons.js", "core.js", "views-main.js", "views-work.js", "styles.css"];
+const ASSET_V = (() => {
+  try {
+    const mt = ASSETS.reduce((m, f) => Math.max(m, statSync(path.join(__dirname, "public", f)).mtimeMs), 0);
+    return Math.round(mt).toString(36);
+  } catch { return Date.now().toString(36); }
+})();
+// index.html を起動時に読み、ローカルのjs/cssへ ?v=... を付与したものを配信する。
+const INDEX_HTML = (() => {
+  try {
+    return readFileSync(path.join(__dirname, "public", "index.html"), "utf8")
+      .replace(/(src|href)="(icons\.js|core\.js|views-main\.js|views-work\.js|styles\.css)"/g, `$1="$2?v=${ASSET_V}"`);
+  } catch { return null; }
+})();
 
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
@@ -176,6 +194,11 @@ app.use((req, res, next) => {
   return res.redirect("/login");
 });
 
+// index.html はバージョン付与済みのものを返す（キャッシュ破棄のため）。静的配信より先に置く。
+app.get(["/", "/index.html"], (req, res, next) => {
+  if (!INDEX_HTML) return next();
+  res.set("Cache-Control", "no-cache").type("html").send(INDEX_HTML);
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // 今日（または ?date=YYYY-MM-DD）の1日分
