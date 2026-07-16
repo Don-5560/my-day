@@ -145,6 +145,53 @@ export const TOOLS = [
     },
   },
   {
+    name: "set_initial_balance",
+    description: "初期残高（元手）を設定する。残高は「初期残高 + 収入合計 − 支出合計」で常に計算される。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        amount: { type: "number", description: "初期残高（円、0以上の整数）" },
+      },
+      required: ["amount"],
+    },
+  },
+  {
+    name: "add_transaction",
+    description:
+      "お金の収入/支出を1件記録する。収入カテゴリ例: Web制作 / Uber / その他。支出カテゴリ例: 生活費 / 事業経費 / ツール代 / その他。金額は整数(円)。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["income", "expense"], description: "income=収入 / expense=支出" },
+        amount: { type: "number", description: "金額（円、1以上の整数）" },
+        category: { type: "string", description: "カテゴリ。省略時は その他" },
+        date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
+        memo: { type: "string" },
+        source: { type: "string", description: "記録元。省略時 manual" },
+      },
+      required: ["type", "amount"],
+    },
+  },
+  {
+    name: "get_balance",
+    description: "現在の残高と、今月（またはmonth指定）の収入合計・支出合計・差引を返す。お金の状況を見るときの起点。",
+    inputSchema: {
+      type: "object",
+      properties: { month: { type: "string", description: "YYYY-MM。省略で今月" } },
+    },
+  },
+  {
+    name: "list_transactions",
+    description: "取引一覧を返す。month(YYYY-MM)・type(income/expense)で絞り込める。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        month: { type: "string", description: "YYYY-MM" },
+        type: { type: "string", enum: ["income", "expense"] },
+      },
+    },
+  },
+  {
     name: "get_templates",
     description: "毎日/曜日ごとの定番タスク設定を取得する。",
     inputSchema: { type: "object", properties: {} },
@@ -173,10 +220,11 @@ export async function callTool(name, args = {}) {
   switch (name) {
     case "get_overview": {
       const today = store.today();
-      const [day, todosDoc, studyDoc, salesDoc, projDoc, xpDoc, settings] = await Promise.all([
+      const [day, todosDoc, studyDoc, salesDoc, projDoc, xpDoc, settings, fin] = await Promise.all([
         store.getDay(today),
         store.getDoc("todos"), store.getDoc("study"), store.getDoc("sales"),
         store.getDoc("projects"), store.getDoc("xp"), store.getDoc("settings"),
+        store.financeSummary(),
       ]);
       const todos = todosDoc?.items ?? [];
       const events = xpDoc?.events ?? [];
@@ -194,6 +242,10 @@ export async function callTool(name, args = {}) {
         openTodos: todos.filter((t) => !t.done).length,
         studyTodayMin: (studyDoc?.logs ?? []).filter((l) => l.date === today).reduce((s, l) => s + l.min, 0),
         salesThisMonth: (salesDoc?.logs ?? []).filter((l) => l.date?.slice(0, 7) === today.slice(0, 7)).reduce((s, l) => s + l.amount, 0),
+        currentBalance: fin.currentBalance,
+        incomeThisMonth: fin.incomeThisMonth,
+        expenseThisMonth: fin.expenseThisMonth,
+        netThisMonth: fin.netThisMonth,
         activeProjects: (projDoc?.items ?? []).filter((p) => (p.progress || 0) < 100).map((p) => ({ name: p.name, client: p.client, deadline: p.deadline, progress: p.progress })),
         diaryWritten: !!day.diary,
       };
@@ -279,8 +331,30 @@ export async function callTool(name, args = {}) {
       };
       doc.logs.push(log);
       await store.saveDoc("sales", doc);
+      // 二重書き: 売上は収入として transactions にも記録する（残高計算はこちらを集計）。
+      // フロントの売上画面は従来どおり doc:sales を読むので後方互換は保たれる。
+      if (Number.isInteger(log.amount) && log.amount > 0) {
+        await store.addTransaction({
+          type: "income", amount: log.amount, category: log.source,
+          date: log.date, memo: log.memo, source: "sale",
+        });
+      }
       const xp = await awardXp(Math.min(Math.round(log.amount / 1000), 300), "売上を記録");
       return { logged: log, xp };
+    }
+
+    case "set_initial_balance":
+      return store.setInitialBalance(args.amount);
+
+    case "add_transaction":
+      return { added: await store.addTransaction(args) };
+
+    case "get_balance":
+      return store.financeSummary(args.month || undefined);
+
+    case "list_transactions": {
+      const items = await store.listTransactions({ month: args.month, type: args.type });
+      return { items, count: items.length };
     }
 
     case "get_templates":
