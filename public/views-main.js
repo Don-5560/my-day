@@ -30,6 +30,7 @@ function go(name) { location.hash = "#/" + name; }
 function route() {
   const name = location.hash.replace(/^#\//, "") || "home";
   CURRENT = VIEWS[name] ? name : "home";
+  document.body.classList.toggle("home-view", CURRENT === "home"); // ホームだけ上部バーを出す
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === CURRENT));
   const main = $("#main");
   main.innerHTML = "";
