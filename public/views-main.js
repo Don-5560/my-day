@@ -48,6 +48,51 @@ function route() {
 }
 function rerender() { route(); }
 
+// 上から引っ張って更新（pull-to-refresh）。AIが予定を更新した後もリロード不要で最新化できる。
+function initPullToRefresh() {
+  if ($("#ptr")) return;
+  const ind = document.createElement("div");
+  ind.id = "ptr";
+  ind.innerHTML = `<div class="ptr-spin">${icon("rotate", 18)}</div>`;
+  document.body.appendChild(ind);
+
+  let startY = 0, pulling = false, dist = 0, refreshing = false;
+  const TH = 72; // 発火しきい値(px)
+  const canPull = () => !refreshing && window.scrollY <= 0 && !document.body.classList.contains("modal-open");
+
+  window.addEventListener("touchstart", (e) => {
+    if (!canPull()) { pulling = false; return; }
+    startY = e.touches[0].clientY; pulling = true; dist = 0;
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (e) => {
+    if (!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    if (dist <= 0 || window.scrollY > 0) { ind.style.transform = ""; ind.classList.remove("ready"); if (window.scrollY > 0) pulling = false; return; }
+    e.preventDefault(); // ネイティブの引っ張り更新を抑える
+    const pull = Math.min(dist * 0.5, 90); // 抵抗をつける
+    ind.style.transform = `translateX(-50%) translateY(${pull}px)`;
+    ind.classList.toggle("ready", dist >= TH);
+  }, { passive: false });
+
+  const end = async () => {
+    if (!pulling) return;
+    pulling = false;
+    if (dist >= TH && !refreshing) {
+      refreshing = true;
+      ind.classList.add("spinning"); ind.classList.remove("ready");
+      ind.style.transform = "translateX(-50%) translateY(56px)";
+      try { await loadAll(); rerender(); toast("最新の状態に更新しました", "rotate"); }
+      catch (err) { if (err.message !== "要ログイン") toast("更新に失敗: " + err.message, "x"); }
+      ind.classList.remove("spinning");
+      refreshing = false;
+    }
+    ind.style.transform = "";
+  };
+  window.addEventListener("touchend", end, { passive: true });
+  window.addEventListener("touchcancel", end, { passive: true });
+}
+
 function buildNav() {
   $("#logoBadge").innerHTML = icon("zap", 18);
   const m = $("#logoBadgeM"); if (m) m.innerHTML = icon("zap", 15);
@@ -818,6 +863,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   buildNav();
   renderLevel();
+  initPullToRefresh();
   window.addEventListener("hashchange", route);
   route();
 });

@@ -66,7 +66,21 @@ body {
   transition: background .3s, color .3s;
   touch-action: manipulation;         /* ダブルタップ拡大を無効化 */
   -webkit-text-size-adjust: 100%;      /* 文字サイズの自動拡大を無効化 */
+  overscroll-behavior-y: contain;      /* ブラウザ標準の引っ張り更新を抑え、自前のPTRを使う */
 }
+
+/* 上から引っ張って更新のインジケーター */
+#ptr {
+  position: fixed; top: -48px; left: 50%; transform: translateX(-50%);
+  z-index: 55; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; color: var(--accent);
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+  transition: transform .22s ease;
+}
+#ptr .ptr-spin { display: grid; place-items: center; transition: transform .2s ease; }
+#ptr.ready .ptr-spin { transform: rotate(180deg); }
+#ptr.spinning .ptr-spin { animation: ptrspin .8s linear infinite; }
+@keyframes ptrspin { to { transform: rotate(360deg); } }
 
 .bg-glow { display: none; }
 :root[data-theme="dark"] .bg-glow {
