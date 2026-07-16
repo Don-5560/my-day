@@ -262,6 +262,8 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .li-time { font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; width: 44px; }
 .li-body { flex: 1; min-width: 0; }
 .li-title { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.li-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.li-tags:empty { display: none; }
 .li-item.done .li-title, .list-item.done .li-title { color: var(--faint); text-decoration: line-through; }
 .li-meta { font-size: 11.5px; color: var(--faint); }
 .li-right { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
@@ -500,6 +502,55 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 }
 .menu-item:hover { border-color: var(--accent-line); transform: translateY(-2px); }
 .menu-item .ic { color: var(--accent); }
+
+/* ===== カレンダー ===== */
+
+.ic.flip { transform: rotate(180deg); }
+
+.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.cal-nav { display: flex; align-items: center; gap: 6px; }
+.cal-title { font-size: 15px; font-weight: 700; margin-left: 6px; letter-spacing: -.01em; }
+.cal-seg { flex-wrap: nowrap; }
+.cal-seg button { padding: 6px 12px; font-size: 12.5px; }
+
+/* 月グリッド */
+.cal-wd { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px; color: var(--faint); font-weight: 600; margin-bottom: 8px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.cal-cell {
+  aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  display: flex; flex-direction: column; align-items: flex-start; padding: 6px; cursor: pointer;
+  position: relative; transition: border-color .15s, background .15s; min-width: 0;
+}
+.cal-cell:hover { border-color: var(--accent-line); }
+.cal-cell.other { opacity: .38; }
+.cal-cell.today { border-color: var(--accent); background: var(--accent-soft); }
+.cal-cell .cc-num { font-size: 12.5px; font-weight: 700; line-height: 1; }
+.cal-cell .cc-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: auto; }
+.cal-cell .cc-count { position: absolute; right: 5px; bottom: 4px; font-size: 9.5px; color: var(--muted); font-weight: 600; }
+
+/* 時間グリッド（日/3日/週） */
+.cal-time { display: flex; overflow-x: auto; }
+.cal-axis { flex: 0 0 42px; }
+.cal-cols { display: flex; flex: 1; min-width: 0; }
+.cal-time.cols-1 .cal-cols { display: block; }
+.cal-col { flex: 1 0 104px; min-width: 104px; border-left: 1px solid var(--line); }
+.cal-time.cols-1 .cal-col { min-width: 0; flex: 1; }
+.cal-colhead { height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.cal-colhead b { font-size: 16px; color: var(--ink); font-weight: 700; }
+.cal-colhead.today b { color: var(--accent); }
+.cal-allday { height: 30px; overflow-y: auto; border-bottom: 1px solid var(--line); padding: 3px; display: flex; flex-direction: column; gap: 3px; }
+.cal-chip { font-size: 10.5px; background: var(--accent-soft); color: var(--accent); border: none; border-radius: 6px; padding: 2px 6px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
+.cal-chip.done { opacity: .5; text-decoration: line-through; }
+.cal-colbody { position: relative; }
+.cal-hline { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); }
+.cal-hlabel { position: absolute; right: 6px; font-size: 10px; color: var(--faint); }
+.cal-ev {
+  position: absolute; left: 3px; right: 3px; min-height: 36px;
+  background: var(--accent-soft); border: none; border-left: 3px solid var(--accent); border-radius: 6px;
+  padding: 4px 6px; font-size: 11px; line-height: 1.3; text-align: left; cursor: pointer; overflow: hidden; color: var(--ink);
+}
+.cal-ev b { display: block; font-size: 10px; color: var(--muted); font-weight: 600; }
+.cal-ev.done { opacity: .55; text-decoration: line-through; }
 
 /* テーマ切替（設定） */
 .theme-toggle { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }

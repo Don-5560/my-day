@@ -186,21 +186,20 @@ app.get("/api/day", wrap(async (req, res) => {
 
 // タスク追加
 app.post("/api/tasks", wrap(async (req, res) => {
-  const { date = store.today(), title, source, time } = req.body;
-  const { day } = await store.addTask(date, title, source, time);
+  const { date = store.today(), title, source, time, cat, tags } = req.body;
+  const { day } = await store.addTask(date, title, source, { time, cat, tags });
   res.json(day);
 }));
 
-// タスクのチェック切り替え・名前変更
+// タスクの更新: 完了トグル(done) / 項目編集(title,cat,tags,time) / 所要時間加算(addMin)
 app.patch("/api/tasks/:id", wrap(async (req, res) => {
-  const { date = store.today(), done, title } = req.body;
+  const { date = store.today(), done, title, cat, tags, time, addMin } = req.body;
   const { id } = req.params;
-  let result;
-  if (typeof title === "string") result = (await store.updateTaskTitle(date, id, title)).day;
-  if (typeof done === "boolean" || title === undefined) {
-    result = (await store.setTaskDone(date, id, done)).day;
-  }
-  res.json(result ?? (await store.getDay(date)));
+  let day;
+  if (typeof addMin === "number") day = (await store.addTaskTime(date, id, addMin)).day;
+  else if (typeof done === "boolean") day = (await store.setTaskDone(date, id, done)).day;
+  else day = (await store.updateTask(date, id, { title, cat, tags, time })).day;
+  res.json(day);
 }));
 
 // タスク削除
@@ -226,6 +225,13 @@ app.put("/api/templates", wrap(async (req, res) => {
 // 履歴（直近n日）
 app.get("/api/history", wrap(async (req, res) => {
   res.json(await store.recentDays(Number(req.query.days || 14)));
+}));
+
+// 期間内の日（カレンダー用）
+app.get("/api/days", wrap(async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) throw new Error("from と to が必要です");
+  res.json(await store.daysInRange(from, to));
 }));
 
 // 汎用データ（モジュールごとのJSON文書: todos / study / sales / xp など）

@@ -9,13 +9,13 @@ const NAV_GROUPS = [
   { label: "グロース", items: ["goals", "badges", "analytics", "calendar"] },
   { label: "", items: ["settings"] },
 ];
-const BOTTOM_NAV = ["time", "todo", "home", "report", "menu"];
+const BOTTOM_NAV = ["calendar", "todo", "home", "report", "menu"];
 // 右ドロワーの構成（モバイルの「メニュー」から開く）
 const DRAWER_GROUPS = [
   { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "売上・収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
   { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"]] },
   { label: "人生・習慣", items: [["habits", "習慣トラッカー"], ["goals", "目標管理"], ["badges", "実績・バッジ"]] },
-  { label: "分析・レポート", items: [["analytics", "分析・レポート"], ["calendar", "カレンダー"]] },
+  { label: "分析・レポート", items: [["analytics", "分析・レポート"]] },
 ];
 
 const CAT_COLORS = { "勉強": "var(--accent)", "制作": "var(--violet)", "営業": "var(--green)", "生活": "var(--amber)", "趣味": "var(--pink)" };
@@ -153,15 +153,27 @@ VIEWS.home = {
 
       <div class="card">
         <div class="card-head"><h2>${icon("calendar", 15)} 今日の予定</h2></div>
-        <div id="schedule">${tasks.map((t) => `
-          <div class="list-item ${t.done ? "done" : ""}" data-row="${t.id}">
+        <div id="schedule">${tasks.map((t) => {
+          const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "";
+          const badges = [
+            t.cat ? `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>` : "",
+            t.source === "template" ? '<span class="pill">定番</span>' : t.source === "ai" ? '<span class="pill acc">AI</span>' : "",
+            ...(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`),
+            t.spentMin ? `<span class="pill grn">${icon("timer", 10)} ${fmtHM(t.spentMin)}</span>` : "",
+          ].join("");
+          return `<div class="list-item ${t.done ? "done" : ""}" data-row="${t.id}">
             <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
             ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
-            <div class="li-body"><div class="li-title">${esc(t.title)}</div></div>
+            <div class="li-body">
+              <div class="li-title">${esc(t.title)}</div>
+              ${badges ? `<div class="li-tags">${badges}</div>` : ""}
+            </div>
             <div class="li-right">
+              <button class="icon-btn" data-play="${t.id}" aria-label="タイマー開始">${icon("play", 14)}</button>
               <button class="icon-btn danger row-del" data-del="${t.id}" aria-label="削除">${icon("trash", 14)}</button>
             </div>
-          </div>`).join("") || '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>'}
+          </div>`;
+        }).join("") || '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>'}
         </div>
       </div>
 
@@ -212,14 +224,22 @@ VIEWS.home = {
       if (!DB.day.tasks.length) $("#schedule").innerHTML = '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>';
     }));
 
-    // 追加（タイトル＋任意の時刻）
+    // タイマー開始（そのタスクの時間を計測）
+    $$("#schedule [data-play]").forEach((b) => b.addEventListener("click", () => {
+      const t = DB.day.tasks.find((x) => x.id === b.dataset.play);
+      if (t) startTaskTimer(t);
+    }));
+
+    // 追加（タイトル＋任意の時刻・カテゴリー・タグ）
     $("#addTask").addEventListener("click", async () => {
       const v = await modal("やることを追加", [
         { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
         { key: "time", label: "時刻（任意）", type: "time" },
+        { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+        { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
       ]);
       if (!v || !v.title) return;
-      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, time: v.time }) });
+      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, time: v.time, cat: v.cat, tags: v.tags }) });
       rerender();
     });
 
@@ -336,7 +356,21 @@ VIEWS.todo = {
 
 // ===== タイマー（ポモドーロ + 勉強時間） =====
 
-const POMO = { dur: 25 * 60, left: 25 * 60, run: false, subject: "一般", id: null };
+const POMO = { dur: 25 * 60, left: 25 * 60, run: false, subject: "一般", id: null, taskId: null, taskDate: null, taskTitle: "" };
+
+// タスクからタイマーを開始（▶ボタン）。完了/終了時にそのタスクへ時間を自動加算する。
+function startTaskTimer(task) {
+  if (POMO.run) { toast("すでにタイマー実行中です", "x"); return; }
+  POMO.taskId = task.id;
+  POMO.taskDate = todayStr();
+  POMO.taskTitle = task.title;
+  POMO.subject = task.cat || "一般";
+  POMO.left = POMO.dur;
+  POMO.run = true;
+  clearInterval(POMO.id); POMO.id = setInterval(pomoTick, 1000);
+  toast(`タイマー開始: ${task.title}`, "play");
+  go("time");
+}
 
 function pomoTick() {
   if (!POMO.run) return;
@@ -355,15 +389,22 @@ async function pomoFinish() {
   const min = Math.round(POMO.dur / 60);
   DB.study.logs.push({ id: uid(), date: todayStr(), min, subject: POMO.subject, src: "pomodoro" });
   await saveDb("study");
+  // タスク連動なら、そのタスクに所要時間を加算
+  if (POMO.taskId) {
+    try {
+      DB.day = await api("/api/tasks/" + POMO.taskId, { method: "PATCH", body: JSON.stringify({ date: POMO.taskDate, addMin: min }) });
+    } catch (e) { /* タスクが消えていても勉強時間は記録済み */ }
+  }
   await addXP(min, `ポモドーロ ${min}分`);
-  toast(`${min}分 完了！おつかれさま`, "timer");
+  toast(`${min}分 完了！${POMO.taskTitle ? POMO.taskTitle + " に記録" : "おつかれさま"}`, "timer");
   try { // 完了音
     const ctx = new AudioContext(); const o = ctx.createOscillator(); const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination); o.frequency.value = 880; g.gain.value = .08;
     o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 500);
   } catch {}
   POMO.left = POMO.dur;
-  if (CURRENT === "time") rerender();
+  POMO.taskId = null; POMO.taskTitle = ""; POMO.taskDate = null;
+  if (CURRENT === "time" || CURRENT === "home") rerender();
 }
 
 VIEWS.time = {
@@ -395,6 +436,7 @@ VIEWS.time = {
           <div class="seg" id="pomoDur">
             ${[25, 50, 90].map((m) => `<button class="${POMO.dur === m * 60 ? "active" : ""}" data-min="${m}">${m}分</button>`).join("")}
           </div>
+          ${POMO.taskTitle ? `<p class="pill acc" style="margin:4px auto 0">${icon("play", 11)} ${esc(POMO.taskTitle)}</p>` : ""}
           <div class="pomo-time" id="pomoTime">${pomoFmt()}</div>
           <div style="margin-bottom:16px">
             <select id="pomoSubject" style="max-width:220px">${subjects.map((s) => `<option ${s === POMO.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
@@ -433,7 +475,7 @@ VIEWS.time = {
       else clearInterval(POMO.id);
       rerender();
     });
-    $("#pomoReset").addEventListener("click", () => { POMO.run = false; clearInterval(POMO.id); POMO.left = POMO.dur; rerender(); });
+    $("#pomoReset").addEventListener("click", () => { POMO.run = false; clearInterval(POMO.id); POMO.left = POMO.dur; POMO.taskId = null; POMO.taskTitle = ""; POMO.taskDate = null; rerender(); });
 
     $("#manualAdd").addEventListener("click", async () => {
       const v = await modal("勉強時間を記録", [

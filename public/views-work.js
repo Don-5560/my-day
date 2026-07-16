@@ -614,62 +614,162 @@ VIEWS.analytics = {
   },
 };
 
-// ===== カレンダー（GitHub風ヒートマップ） =====
+// ===== カレンダー（日 / 3日 / 週 / 月 切替） =====
+
+let CAL = { view: "month", anchor: null };
+const CAL_LABELS = { day: "日", "3day": "3日", week: "週", month: "月" };
+const WD_JP = ["日", "月", "火", "水", "木", "金", "土"];
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const calAdd = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return isoOf(d); };
+const calXp = (iso) => activityMap()[iso] || 0;
+const calLevel = (xp) => (xp >= 100 ? 4 : xp >= 50 ? 3 : xp >= 25 ? 2 : xp > 0 ? 1 : 0);
+const calStudy = (iso) => DB.study.logs.filter((l) => l.date === iso).reduce((s, l) => s + l.min, 0);
+const isTimed = (t) => /^\d{1,2}:\d{2}$/.test(t.time || "");
+
+function calRange() {
+  const a = CAL.anchor, d = new Date(a + "T00:00:00");
+  if (CAL.view === "day") return [a, a];
+  if (CAL.view === "3day") return [a, calAdd(a, 2)];
+  if (CAL.view === "week") { const s = new Date(d); s.setDate(d.getDate() - d.getDay()); return [isoOf(s), calAdd(isoOf(s), 6)]; }
+  const first = new Date(d.getFullYear(), d.getMonth(), 1);
+  const gs = new Date(first); gs.setDate(1 - first.getDay());
+  return [isoOf(gs), calAdd(isoOf(gs), 41)];
+}
+function calTitle() {
+  const [from, to] = calRange();
+  const d = new Date(CAL.anchor + "T00:00:00");
+  if (CAL.view === "month") return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+  if (CAL.view === "day") return fmtJP(CAL.anchor);
+  return `${fmtShort(from)} – ${fmtShort(to)}`;
+}
+function calShift(dir) {
+  if (CAL.view === "month") { const d = new Date(CAL.anchor + "T00:00:00"); d.setMonth(d.getMonth() + dir); CAL.anchor = isoOf(d); }
+  else CAL.anchor = calAdd(CAL.anchor, dir * (CAL.view === "week" ? 7 : CAL.view === "3day" ? 3 : 1));
+}
+async function calLoadDays(from, to) {
+  const days = await api(`/api/days?from=${from}&to=${to}`);
+  const map = {};
+  for (const d of days) map[d.date] = d;
+  if (DB.day && DB.day.date >= from && DB.day.date <= to) map[DB.day.date] = DB.day; // 今日はライブ
+  return map;
+}
 
 VIEWS.calendar = {
   title: "カレンダー", icon: "calendar",
   async render(main) {
-    const map = activityMap();
-    const N = 119; // 17週
-    const start = new Date(); start.setDate(start.getDate() - N);
-    while (start.getDay() !== 0) start.setDate(start.getDate() - 1); // 日曜はじまり
-    const cells = [];
-    const cur = new Date(start);
-    const today = todayStr();
-    while (true) {
-      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
-      if (iso > today) break;
-      const xp = map[iso] || 0;
-      const lv = xp >= 100 ? 4 : xp >= 50 ? 3 : xp >= 25 ? 2 : xp > 0 ? 1 : 0;
-      cells.push({ iso, xp, lv });
-      cur.setDate(cur.getDate() + 1);
-    }
-    const active = cells.filter((c) => c.xp > 0).length;
-
+    if (!CAL.anchor) CAL.anchor = todayStr();
     main.innerHTML = `
-      <div class="page-head">
-        <div><p class="eyebrow">Activity</p><h1>カレンダー</h1></div>
-        <span class="pill acc">${icon("flame", 12)} 連続 ${streak()}日</span>
-      </div>
-      <div class="card">
-        <h2>${icon("calendar", 15)} 毎日の活動量（獲得XP）— 直近${cells.length}日 / 活動${active}日</h2>
-        <div class="heatmap">${cells.map((c) =>
-          `<span class="hm-cell ${c.lv ? "hm-" + c.lv : ""}" data-day="${c.iso}" title="${c.iso}: ${c.xp} XP"></span>`).join("")}</div>
-        <div style="display:flex;gap:5px;align-items:center;justify-content:flex-end;margin-top:10px" class="small muted">
-          少ない <span class="hm-cell"></span><span class="hm-cell hm-1"></span><span class="hm-cell hm-2"></span><span class="hm-cell hm-3"></span><span class="hm-cell hm-4"></span> 多い
+      <div class="page-head"><div><p class="eyebrow">Calendar</p><h1>カレンダー</h1></div>
+        <span class="pill acc">${icon("flame", 12)} 連続 ${streak()}日</span></div>
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button class="icon-btn" id="calPrev">${icon("chevR", 16, "flip")}</button>
+          <button class="btn ghost sm" id="calToday">今日</button>
+          <button class="icon-btn" id="calNext">${icon("chevR", 16)}</button>
+          <span class="cal-title">${esc(calTitle())}</span>
         </div>
+        <div class="seg cal-seg">${Object.entries(CAL_LABELS).map(([v, l]) => `<button class="${CAL.view === v ? "active" : ""}" data-cv="${v}">${l}</button>`).join("")}</div>
       </div>
-      <div class="card" id="dayDetail"><p class="empty">マスをクリックすると、その日の記録が見られます</p></div>`;
+      <div class="card" id="calBody"><p class="empty">読み込み中…</p></div>
+      <div class="card" id="calDetail" style="display:none"></div>`;
 
-    let hist = null;
-    $$(".heatmap .hm-cell").forEach((cell) => cell.addEventListener("click", async () => {
-      const iso = cell.dataset.day;
-      if (!hist) hist = await api("/api/history?days=130");
-      const d = hist.find((x) => x.date === iso);
-      const xp = map[iso] || 0;
-      const study = DB.study.logs.filter((l) => l.date === iso).reduce((s, l) => s + l.min, 0);
-      $("#dayDetail").innerHTML = `
-        <h2>${icon("calendar", 15)} ${fmtJP(iso)}</h2>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <span class="pill acc">${icon("zap", 11)} ${xp} XP</span>
-          <span class="pill">${icon("timer", 11)} ${fmtMin(study) || "0分"}</span>
-          ${d ? `<span class="pill">${icon("check", 11)} ${d.tasks.filter((t) => t.done).length}/${d.tasks.length} タスク</span>` : ""}
-        </div>
-        ${d?.diary ? `<p class="small" style="white-space:pre-wrap;margin:0">${esc(d.diary)}</p>` : '<p class="empty">この日の日報はありません</p>'}`;
-      $("#dayDetail").scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }));
+    $("#calPrev").addEventListener("click", () => { calShift(-1); rerender(); });
+    $("#calNext").addEventListener("click", () => { calShift(1); rerender(); });
+    $("#calToday").addEventListener("click", () => { CAL.anchor = todayStr(); rerender(); });
+    $$("[data-cv]", main).forEach((b) => b.addEventListener("click", () => { CAL.view = b.dataset.cv; rerender(); }));
+
+    const [from, to] = calRange();
+    let map;
+    try { map = await calLoadDays(from, to); }
+    catch (e) { $("#calBody").innerHTML = `<p class="empty">読み込み失敗: ${esc(e.message)}</p>`; return; }
+    if (CURRENT !== "calendar") return;
+
+    if (CAL.view === "month") calRenderMonth($("#calBody"), map);
+    else calRenderTime($("#calBody"), map, from, to);
   },
 };
+
+function calRenderMonth(el, map) {
+  const [from] = calRange();
+  const anchorMonth = new Date(CAL.anchor + "T00:00:00").getMonth();
+  const today = todayStr();
+  let cells = "";
+  for (let i = 0; i < 42; i++) {
+    const iso = calAdd(from, i), d = new Date(iso + "T00:00:00"), day = map[iso];
+    const done = day ? day.tasks.filter((t) => t.done).length : 0;
+    const total = day ? day.tasks.length : 0;
+    const lv = calLevel(calXp(iso));
+    const cls = ["cal-cell", d.getMonth() !== anchorMonth ? "other" : "", iso === today ? "today" : ""].join(" ");
+    cells += `<button class="${cls}" data-day="${iso}">
+      <span class="cc-num">${d.getDate()}</span>
+      ${lv ? `<span class="cc-dot hm-${lv}"></span>` : ""}
+      ${total ? `<span class="cc-count">${done}/${total}</span>` : ""}
+    </button>`;
+  }
+  el.innerHTML = `<div class="cal-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>`;
+  $$(".cal-cell", el).forEach((b) => b.addEventListener("click", () => calShowDetail(b.dataset.day, map)));
+}
+
+function calRenderTime(el, map, from, to) {
+  const days = [];
+  for (let iso = from; iso <= to; iso = calAdd(iso, 1)) days.push(iso);
+  const H0 = 6, H1 = 24, rowH = 44, today = todayStr();
+  const hours = [];
+  for (let h = H0; h < H1; h++) hours.push(h);
+  const bodyH = (H1 - H0) * rowH;
+
+  const axis = `<div class="cal-axis">
+    <div class="cal-colhead"></div><div class="cal-allday"></div>
+    <div class="cal-colbody" style="height:${bodyH}px">
+      ${hours.map((h, i) => `<div class="cal-hlabel" style="top:${i * rowH - 6}px">${h}:00</div>`).join("")}
+    </div></div>`;
+
+  const cols = days.map((iso) => {
+    const d = new Date(iso + "T00:00:00"), day = map[iso], tasks = day ? day.tasks : [];
+    const timed = tasks.filter(isTimed), allday = tasks.filter((t) => !isTimed(t));
+    const blocks = timed.map((t) => {
+      const [hh, mm] = t.time.split(":").map(Number);
+      const top = Math.max(0, (hh - H0 + mm / 60) * rowH);
+      const col = t.cat ? (CAT_COLORS[t.cat] || "var(--accent)") : "var(--accent)";
+      return `<button class="cal-ev ${t.done ? "done" : ""}" data-ev="${iso}" style="top:${top}px;border-left-color:${col}"><b>${esc(t.time)}</b>${esc(t.title)}</button>`;
+    }).join("");
+    return `<div class="cal-col">
+      <div class="cal-colhead ${iso === today ? "today" : ""}">${WD_JP[d.getDay()]}<b>${d.getDate()}</b></div>
+      <div class="cal-allday">${allday.map((t) => `<button class="cal-chip ${t.done ? "done" : ""}" data-ev="${iso}">${esc(t.title)}</button>`).join("")}</div>
+      <div class="cal-colbody" style="height:${bodyH}px">
+        ${hours.map((h, i) => `<div class="cal-hline" style="top:${i * rowH}px"></div>`).join("")}
+        ${blocks}
+      </div></div>`;
+  }).join("");
+
+  el.style.padding = "10px";
+  el.innerHTML = `<div class="cal-time cols-${days.length}">${axis}<div class="cal-cols">${cols}</div></div>`;
+  $$("[data-ev]", el).forEach((b) => b.addEventListener("click", () => calShowDetail(b.dataset.ev, map)));
+}
+
+function calShowDetail(iso, map) {
+  const day = map[iso], xp = calXp(iso), study = calStudy(iso);
+  const sales = DB.sales.logs.filter((l) => l.date === iso).reduce((s, l) => s + l.amount, 0);
+  const el = $("#calDetail");
+  el.style.display = "";
+  el.innerHTML = `
+    <div class="card-head"><h2>${icon("calendar", 15)} ${fmtJP(iso)}</h2></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="pill acc">${icon("zap", 11)} ${xp} XP</span>
+      <span class="pill">${icon("timer", 11)} ${fmtMin(study) || "0分"}</span>
+      ${day ? `<span class="pill">${icon("check", 11)} ${day.tasks.filter((t) => t.done).length}/${day.tasks.length} タスク</span>` : ""}
+      ${sales ? `<span class="pill grn">${fmtYen(sales)}</span>` : ""}
+    </div>
+    ${day && day.tasks.length ? day.tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}">
+      <span class="li-ic">${icon(t.done ? "checkline" : "clock", 14)}</span>
+      ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
+      <div class="li-body"><div class="li-title">${esc(t.title)}</div></div>
+      ${t.spentMin ? `<span class="pill grn">${fmtHM(t.spentMin)}</span>` : ""}
+    </div>`).join("") : '<p class="empty">この日のタスクはありません</p>'}
+    ${day?.diary ? `<p class="small" style="white-space:pre-wrap;margin:12px 0 0;color:var(--muted)">${esc(day.diary)}</p>` : ""}`;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 
 // ===== 設定 =====
 
