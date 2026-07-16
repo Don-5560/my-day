@@ -386,13 +386,14 @@ async function logActivity() {
     await saveDb("study"); await addXP(Math.min(v.min, 120), "勉強を記録"); toast("勉強を記録しました");
   } else if (pick === "sale") {
     const v = await modal("売上を記録", [
-      { key: "amount", label: "金額（円）", type: "money", placeholder: "50000" },
+      { key: "amount", label: "売上金額（円）", type: "money", placeholder: "50000" },
+      { key: "cost", label: "経費（任意・円）", type: "money", placeholder: "0" },
       { key: "source", label: "収入源", type: "select", options: SALE_SOURCES },
       { key: "date", label: "日付", type: "date", default: todayStr() },
       { key: "memo", label: "メモ", type: "text" },
     ]);
     if (!v || !v.amount) return;
-    try { await api("/api/transactions", { method: "POST", body: JSON.stringify({ type: "income", amount: Math.round(v.amount), category: v.source, date: v.date || todayStr(), memo: v.memo }) }); }
+    try { await api("/api/sales", { method: "POST", body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.source, date: v.date || todayStr(), memo: v.memo }) }); }
     catch (e) { toast(e.message, "x"); return; }
     await refreshSales(); await addXP(Math.min(Math.round(v.amount / 1000), 300), "売上を記録"); toast("売上を記録しました");
   } else if (pick === "outreach") {

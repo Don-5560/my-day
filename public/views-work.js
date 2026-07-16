@@ -283,6 +283,8 @@ VIEWS.sales = {
     const logs = DB.sales.logs;
     const mk = monthKey(todayStr());
     const monthSum = (key) => logs.filter((l) => monthKey(l.date) === key).reduce((s, l) => s + l.amount, 0);
+    const monthCost = (key) => logs.filter((l) => monthKey(l.date) === key).reduce((s, l) => s + (l.cost || 0), 0);
+    const monthProfit = (key) => monthSum(key) - monthCost(key);
     const total = logs.reduce((s, l) => s + l.amount, 0);
     const goal = DB.settings.salesGoal || 0;
     const diff = monthSum(mk) - goal;
@@ -300,10 +302,10 @@ VIEWS.sales = {
         <button class="btn" id="add">${icon("plus", 15)} 売上を記録</button>
       </div>
       <div class="stat-grid">
-        ${statCard("yen", fmtYen(monthSum(mk)), "今月")}
-        ${statCard("chart", fmtYen(total), "累計")}
-        ${statCard("target", fmtYen(goal), "月間目標")}
-        ${statCard(diff >= 0 ? "trophy" : "clock", (diff >= 0 ? "+" : "") + fmtYen(diff).replace("¥-", "-¥"), "目標との差")}
+        ${statCard("yen", fmtYen(monthSum(mk)), "今月の売上")}
+        ${statCard("wallet", fmtYen(monthCost(mk)), "今月の経費")}
+        ${statCard(monthProfit(mk) >= 0 ? "trophy" : "clock", fmtYen(monthProfit(mk)).replace("¥-", "-¥"), "今月の利益")}
+        ${statCard("target", (diff >= 0 ? "+" : "") + fmtYen(diff).replace("¥-", "-¥"), "目標との差")}
       </div>
       <div class="grid2">
         <div class="card" style="margin-bottom:0">
@@ -317,7 +319,7 @@ VIEWS.sales = {
         ${logs.slice(-10).reverse().map((l) => `
           <div class="row">
             <span class="pill acc">${esc(l.source)}</span>
-            <span class="row-title small">${fmtShort(l.date)}${l.memo ? " — " + esc(l.memo) : ""}</span>
+            <span class="row-title small">${fmtShort(l.date)}${l.memo ? " — " + esc(l.memo) : ""}${l.cost ? ` <span style="color:var(--muted)">（経費 ${fmtYen(l.cost)}・利益 ${fmtYen(l.amount - l.cost)}）</span>` : ""}</span>
             <strong>${fmtYen(l.amount)}</strong>
             <button class="icon-btn danger row-del" data-del="${l.id}">${icon("trash", 13)}</button>
           </div>`).join("") || '<p class="empty">売上記録がありません</p>'}
@@ -326,14 +328,15 @@ VIEWS.sales = {
     $("#add").addEventListener("click", async () => {
       const v = await modal("売上を記録", [
         { key: "date", label: "日付", type: "date", default: todayStr() },
-        { key: "amount", label: "金額（円）", type: "money", placeholder: "50000" },
+        { key: "amount", label: "売上金額（円）", type: "money", placeholder: "50000" },
+        { key: "cost", label: "経費（任意・円）", type: "money", placeholder: "0" },
         { key: "source", label: "収入源", type: "select", options: SALE_SOURCES },
         { key: "memo", label: "メモ", type: "text", placeholder: "例: ◯◯様 LP制作" },
       ]);
       if (!v || !v.amount) return;
-      // 収入トランザクションとして記録（残高にも反映＆売上明細にミラー）
+      // 売上(収入)＋任意の経費(支出)を記録。残高に反映＆売上明細にミラー、利益も計算できる。
       try {
-        await api("/api/transactions", { method: "POST", body: JSON.stringify({ type: "income", amount: Math.round(v.amount), category: v.source, date: v.date || todayStr(), memo: v.memo }) });
+        await api("/api/sales", { method: "POST", body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.source, date: v.date || todayStr(), memo: v.memo }) });
       } catch (e) { toast(e.message, "x"); return; }
       await refreshSales();
       await addXP(Math.min(Math.round(v.amount / 1000), 300), "売上を記録！");

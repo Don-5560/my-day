@@ -257,6 +257,10 @@ app.get("/api/transactions", wrap(async (req, res) => {
 app.post("/api/transactions", wrap(async (req, res) => {
   res.json(await store.addTransaction(req.body));
 }));
+// 売上の記録: 収入(売上)＋任意の経費(支出)をまとめて登録し、利益を出せるようにする
+app.post("/api/sales", wrap(async (req, res) => {
+  res.json(await store.recordSale(req.body));
+}));
 app.delete("/api/transactions/:id", wrap(async (req, res) => {
   res.json(await store.removeTransaction(req.params.id));
 }));

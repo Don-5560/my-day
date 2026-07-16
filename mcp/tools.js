@@ -164,11 +164,12 @@ export const TOOLS = [
   },
   {
     name: "log_sale",
-    description: "売上を記録する。source は Web制作 / Uber / その他。",
+    description: "売上を記録する。source は Web制作 / Uber / その他。cost に経費(円)を渡すと支出としても記録され、利益(売上−経費)が出せる。",
     inputSchema: {
       type: "object",
       properties: {
-        amount: { type: "number", description: "金額（円）" },
+        amount: { type: "number", description: "売上金額（円）" },
+        cost: { type: "number", description: "経費（円・任意）。支出として台帳にも入る" },
         source: { type: "string", enum: ["Web制作", "Uber", "その他"] },
         memo: { type: "string" },
         date: { type: "string" },
@@ -366,14 +367,14 @@ export async function callTool(name, args = {}) {
 
     case "log_sale": {
       const amount = Math.round(args.amount);
+      const cost = Math.round(args.cost || 0);
       const source = ["Web制作", "Uber", "その他"].includes(args.source) ? args.source : "その他";
-      // 収入トランザクションとして記録 → addTransaction 内で売上明細(doc:sales)にも自動ミラーされる。
-      const tx = await store.addTransaction({
-        type: "income", amount, category: source,
-        date: args.date || store.today(), memo: args.memo || "", source: "sale",
+      // 売上(収入)＋任意の経費(支出)を記録。売上明細(doc:sales)にミラーされ、利益も計算できる。
+      const { income, expense } = await store.recordSale({
+        amount, cost, source, date: args.date || store.today(), memo: args.memo || "",
       });
       const xp = await awardXp(Math.min(Math.round(amount / 1000), 300), "売上を記録");
-      return { logged: tx, xp };
+      return { logged: income, expense, profit: amount - cost, xp };
     }
 
     case "set_initial_balance":
