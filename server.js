@@ -11,7 +11,7 @@ import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import * as store from "./lib/store.js";
-import { makeToken, verifyToken, checkPassword, MAX_AGE_MS, warnIfInsecure } from "./lib/auth.js";
+import { makeToken, verifyToken, checkPassword, warnIfInsecure } from "./lib/auth.js";
 import { TOOLS, callTool } from "./mcp/tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,11 +40,13 @@ app.post("/api/login", (req, res) => {
   if (!checkPassword(req.body?.password)) {
     return res.status(401).json({ error: "パスワードが違います" });
   }
+  // maxAgeを付けない＝セッションクッキー。ブラウザを閉じると消える（＝開き直したら再ログイン）。
+  // さらにトークン自体に発行時刻が入っていて、サーバー側で MAX_AGE_MS(1日) を過ぎたら無効化する。
+  // 結果、「ブラウザを閉じたとき」または「1日経過」の早い方で再ログインが必要になる。
   res.cookie("sid", makeToken(), {
     httpOnly: true,
     sameSite: "lax",
     secure: PROD, // 本番(HTTPS)ではsecure。ローカルはhttpなのでfalse
-    maxAge: MAX_AGE_MS,
   });
   res.json({ ok: true });
 });
