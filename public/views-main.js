@@ -384,15 +384,54 @@ VIEWS.todo = {
   render(main) {
     const items = DB.todos.items
       .filter((t) => TODO_FILTER.cat === "すべて" || t.cat === TODO_FILTER.cat)
-      .filter((t) => !TODO_FILTER.q || (t.title + (t.tags || []).join()).toLowerCase().includes(TODO_FILTER.q.toLowerCase()))
-      .sort((a, b) => (a.done - b.done) || (a.order ?? 0) - (b.order ?? 0));
+      .filter((t) => !TODO_FILTER.q || (t.title + (t.tags || []).join()).toLowerCase().includes(TODO_FILTER.q.toLowerCase()));
+
+    // 4セクションに振り分け（左上=高 / 右上=中 / 左下=低 / 右下=完了）
+    const groups = { "高": [], "中": [], "低": [], done: [] };
+    for (const t of items) {
+      if (t.done) groups.done.push(t);
+      else groups[PRIS.includes(t.pri) ? t.pri : "中"].push(t);
+    }
+    groups["高"].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    groups["中"].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    groups["低"].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    groups.done.sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
+
+    const rowHTML = (t) => {
+      const over = t.due && t.due < todayStr() && !t.done;
+      return `<div class="row ${t.done ? "done" : ""}" draggable="true" data-id="${t.id}">
+        <span style="cursor:grab;color:var(--faint)" class="drag-h">${icon("grip", 15)}</span>
+        <input type="checkbox" class="checkbox" data-check="${t.id}" ${t.done ? "checked" : ""}>
+        <span class="row-title">${esc(t.title)}</span>
+        <span class="row-meta">
+          <span class="pill" style="color:${CAT_COLORS[t.cat]};background:color-mix(in srgb, ${CAT_COLORS[t.cat]} 14%, transparent)">${esc(t.cat)}</span>
+          ${t.due ? `<span class="pill ${over ? "red" : ""}">${fmtShort(t.due)}</span>` : ""}
+          ${(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`).join("")}
+        </span>
+        <button class="icon-btn row-edit" data-edit="${t.id}">${icon("edit", 14)}</button>
+        <button class="icon-btn danger row-del" data-del="${t.id}">${icon("trash", 14)}</button>
+      </div>`;
+    };
+    const SECTIONS = [
+      { key: "高", label: "優先度 高", cls: "red" },
+      { key: "中", label: "優先度 中", cls: "amb" },
+      { key: "低", label: "優先度 低", cls: "" },
+      { key: "done", label: "完了", cls: "grn" },
+    ];
+    const sectionHTML = (s) => `
+      <div class="todo-sec sec-${s.key === "done" ? "done" : s.cls || "low"}" data-drop-sec="${s.key}">
+        <div class="todo-sec-head"><span class="pill ${s.cls}">${esc(s.label)}</span><span class="todo-sec-n">${groups[s.key].length}</span></div>
+        <div class="todo-sec-body" data-sec="${s.key}">
+          ${groups[s.key].map(rowHTML).join("") || `<p class="empty sm">${s.key === "done" ? "まだありません" : "ここにドラッグ／「追加」で作成"}</p>`}
+        </div>
+      </div>`;
 
     main.innerHTML = `
       <div class="page-head">
         <div><p class="eyebrow">Tasks</p><h1>Todo</h1></div>
         <button class="btn" id="addTodo">${icon("plus", 15)} 追加</button>
       </div>
-      <div class="card">
+      <div class="card" style="padding-bottom:14px">
         <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
           <div style="position:relative;flex:1;min-width:180px">
             <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--faint)">${icon("search", 15)}</span>
@@ -401,25 +440,8 @@ VIEWS.todo = {
         </div>
         <div class="tabs">${["すべて", ...CATS].map((c) =>
           `<button class="tab ${TODO_FILTER.cat === c ? "active" : ""}" data-cat="${c}">${c}</button>`).join("")}</div>
-        <div id="todoList">
-        ${items.map((t) => {
-          const over = t.due && t.due < todayStr() && !t.done;
-          return `<div class="row ${t.done ? "done" : ""}" draggable="true" data-id="${t.id}">
-            <span style="cursor:grab;color:var(--faint)" class="drag-h">${icon("grip", 15)}</span>
-            <input type="checkbox" class="checkbox" data-check="${t.id}" ${t.done ? "checked" : ""}>
-            <span class="row-title">${esc(t.title)}</span>
-            <span class="row-meta">
-              <span class="pill" style="color:${CAT_COLORS[t.cat]};background:color-mix(in srgb, ${CAT_COLORS[t.cat]} 14%, transparent)">${esc(t.cat)}</span>
-              <span class="pill ${t.pri === "高" ? "red" : t.pri === "中" ? "amb" : ""}">${esc(t.pri)}</span>
-              ${t.due ? `<span class="pill ${over ? "red" : ""}">${fmtShort(t.due)}</span>` : ""}
-              ${(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`).join("")}
-            </span>
-            <button class="icon-btn row-edit" data-edit="${t.id}">${icon("edit", 14)}</button>
-            <button class="icon-btn danger row-del" data-del="${t.id}">${icon("trash", 14)}</button>
-          </div>`;
-        }).join("") || '<p class="empty">Todoがありません。「追加」から作成しましょう。</p>'}
-        </div>
-      </div>`;
+      </div>
+      <div class="todo-grid">${SECTIONS.map(sectionHTML).join("")}</div>`;
 
     const FIELDS = [
       { key: "title", label: "タイトル", type: "text", placeholder: "何をやる？" },
@@ -461,21 +483,42 @@ VIEWS.todo = {
       await saveDb("todos"); rerender();
     }));
 
-    // ドラッグ&ドロップで並び替え
+    // ドラッグ&ドロップ（PC）: 別セクションへ落とすと優先度/完了が変わる。行の上に落とすとその前へ並び替え。
     let dragId = null;
-    $$("#todoList [draggable]").forEach((row) => {
-      row.addEventListener("dragstart", () => { dragId = row.dataset.id; row.style.opacity = ".4"; });
+    const applyDrop = async (secKey, beforeId) => {
+      const arr = DB.todos.items;
+      const t = arr.find((x) => x.id === dragId);
+      if (!t) return;
+      const wasDone = t.done;
+      if (secKey === "done") { t.done = true; t.doneAt = t.doneAt || Date.now(); }
+      else { t.done = false; t.doneAt = null; t.pri = secKey; }
+      arr.splice(arr.indexOf(t), 1);
+      let at = beforeId ? arr.findIndex((x) => x.id === beforeId) : arr.length;
+      if (at < 0) at = arr.length;
+      arr.splice(at, 0, t);
+      arr.forEach((x, i) => (x.order = i));
+      await saveDb("todos");
+      if (secKey === "done" && !wasDone) { await addXP(t.pri === "高" ? XP_RULES.todoHigh : t.pri === "低" ? XP_RULES.todoLow : XP_RULES.todoMid, "Todo完了"); }
+      rerender();
+    };
+    $$(".row[draggable]", main).forEach((row) => {
+      row.addEventListener("dragstart", (e) => { dragId = row.dataset.id; row.style.opacity = ".4"; e.dataTransfer.effectAllowed = "move"; });
       row.addEventListener("dragend", () => { row.style.opacity = ""; });
       row.addEventListener("dragover", (e) => e.preventDefault());
-      row.addEventListener("drop", async (e) => {
-        e.preventDefault();
+      row.addEventListener("drop", (e) => {
+        e.preventDefault(); e.stopPropagation();
         if (!dragId || dragId === row.dataset.id) return;
-        const arr = DB.todos.items;
-        const from = arr.findIndex((x) => x.id === dragId);
-        const to = arr.findIndex((x) => x.id === row.dataset.id);
-        arr.splice(to, 0, arr.splice(from, 1)[0]);
-        arr.forEach((x, i) => (x.order = i));
-        await saveDb("todos"); rerender();
+        const sec = row.closest("[data-drop-sec]")?.dataset.dropSec;
+        if (sec) applyDrop(sec, row.dataset.id);
+      });
+    });
+    $$("[data-drop-sec]", main).forEach((zone) => {
+      zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drop-over"); });
+      zone.addEventListener("dragleave", () => zone.classList.remove("drop-over"));
+      zone.addEventListener("drop", (e) => {
+        e.preventDefault(); zone.classList.remove("drop-over");
+        if (!dragId) return;
+        applyDrop(zone.dataset.dropSec, null); // セクション末尾へ
       });
     });
   },
