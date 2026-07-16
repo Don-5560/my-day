@@ -20,6 +20,15 @@ const DRAWER_GROUPS = [
 
 const CAT_COLORS = { "勉強": "var(--accent)", "制作": "var(--violet)", "営業": "var(--green)", "生活": "var(--amber)", "趣味": "var(--pink)" };
 const CATS = Object.keys(CAT_COLORS);
+
+// 予定の所要時間（分）を開始〜終了時刻から求める。片方でも欠ければ0。
+const planMin = (t) => {
+  if (!t.time || !t.endTime) return 0;
+  const [h1, m1] = t.time.split(":").map(Number);
+  const [h2, m2] = t.endTime.split(":").map(Number);
+  const d = (h2 * 60 + m2) - (h1 * 60 + m1);
+  return Number.isFinite(d) && d > 0 ? d : 0;
+};
 const PRIS = ["高", "中", "低"];
 const MOODS = ["laugh", "smile", "meh", "frown", "tired"];
 
@@ -154,23 +163,29 @@ VIEWS.home = {
 
       <div class="card">
         <div class="card-head"><h2>${icon("calendar", 15)} 今日の予定</h2></div>
-        <div id="schedule">${tasks.map((t) => {
-          const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "";
+        <div id="schedule" class="sched">${tasks.map((t) => {
+          const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "var(--line)";
+          const pm = planMin(t);
           const badges = [
             t.cat ? `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>` : "",
             t.source === "template" ? '<span class="pill">定番</span>' : t.source === "ai" ? '<span class="pill acc">AI</span>' : "",
             ...(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`),
-            t.spentMin ? `<span class="pill grn">${icon("timer", 10)} ${fmtHM(t.spentMin)}</span>` : "",
+            t.spentMin ? `<span class="pill grn">${icon("timer", 10)} 実績 ${fmtHM(t.spentMin)}</span>` : "",
           ].join("");
-          return `<div class="list-item ${t.done ? "done" : ""}" data-row="${t.id}">
+          return `<div class="sched-item ${t.done ? "done" : ""}" data-row="${t.id}" style="--cat:${catCol}">
+            <div class="sched-time">
+              <span class="st-start ${t.time ? "" : "none"}">${t.time ? esc(t.time) : "—"}</span>
+              ${t.endTime ? `<span class="st-end">${esc(t.endTime)}</span>` : ""}
+              ${pm ? `<span class="st-dur">${fmtHM(pm)}</span>` : ""}
+            </div>
             <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
-            ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
             <div class="li-body">
               <div class="li-title">${esc(t.title)}</div>
               ${badges ? `<div class="li-tags">${badges}</div>` : ""}
             </div>
             <div class="li-right">
               <button class="icon-btn" data-play="${t.id}" aria-label="タイマー開始">${icon("play", 14)}</button>
+              <button class="icon-btn" data-edit="${t.id}" aria-label="編集">${icon("edit", 14)}</button>
               <button class="icon-btn danger row-del" data-del="${t.id}" aria-label="削除">${icon("trash", 14)}</button>
             </div>
           </div>`;
@@ -208,22 +223,40 @@ VIEWS.home = {
       if (bar) bar.style.width = (tt ? Math.round((d / tt) * 100) : 0) + "%";
     };
 
-    // チェック: その場でトグル（再描画やチェック位置へのジャンプをしない）
+    // 完了時に実績時間（何時間やったか）を任意入力してもらう
+    const askSpentTime = async (taskId) => {
+      const t = DB.day.tasks.find((x) => x.id === taskId);
+      if (!t) return;
+      const cur = t.spentMin || planMin(t) || 0; // 既存の実績、無ければ予定の所要を初期値に
+      const v = await modal("実績時間を記録（任意）", [
+        { key: "h", label: "時間", type: "number", default: Math.floor(cur / 60), placeholder: "0" },
+        { key: "m", label: "分", type: "number", default: cur % 60, placeholder: "0" },
+      ]);
+      if (!v) return; // キャンセル＝スキップ（完了はそのまま）
+      const total = Math.max(0, (Number(v.h) || 0) * 60 + (Number(v.m) || 0));
+      if (total === (t.spentMin || 0)) return;
+      try {
+        DB.day = await api("/api/tasks/" + taskId, { method: "PATCH", body: JSON.stringify({ spentMin: total }) });
+      } catch (err) { toast(err.message, "x"); return; }
+      rerender();
+    };
+
+    // チェック: その場でトグル。完了にした時は実績時間の入力をうながす。
     $$("#schedule [data-task]").forEach((cb) => cb.addEventListener("change", async () => {
-      const row = cb.closest(".list-item");
+      const row = cb.closest(".sched-item");
       row.classList.toggle("done", cb.checked);
       try {
         DB.day = await api("/api/tasks/" + cb.dataset.task, { method: "PATCH", body: JSON.stringify({ done: cb.checked }) });
       } catch (err) { cb.checked = !cb.checked; row.classList.toggle("done", cb.checked); toast(err.message, "x"); return; }
       refreshSummary();
-      if (cb.checked) await addXP(XP_RULES.task, "タスク完了");
+      if (cb.checked) { await addXP(XP_RULES.task, "タスク完了"); await askSpentTime(cb.dataset.task); }
     }));
 
     // 削除: その場で行を消す
     $$("#schedule [data-del]").forEach((b) => b.addEventListener("click", async () => {
       try { DB.day = await api("/api/tasks/" + b.dataset.del + "?date=" + todayStr(), { method: "DELETE" }); }
       catch (err) { toast(err.message, "x"); return; }
-      const row = b.closest(".list-item"); if (row) row.remove();
+      const row = b.closest(".sched-item"); if (row) row.remove();
       refreshSummary();
       if (!DB.day.tasks.length) $("#schedule").innerHTML = '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>';
     }));
@@ -234,16 +267,35 @@ VIEWS.home = {
       if (t) startTaskTimer(t);
     }));
 
-    // 追加（タイトル＋任意の時刻・カテゴリー・タグ）
+    // 編集（タイトル・開始/終了時刻・カテゴリー・タグ）
+    $$("#schedule [data-edit]").forEach((b) => b.addEventListener("click", async () => {
+      const t = DB.day.tasks.find((x) => x.id === b.dataset.edit);
+      if (!t) return;
+      const v = await modal("予定を編集", [
+        { key: "title", label: "やること", type: "text" },
+        { key: "time", label: "開始時刻（任意）", type: "time" },
+        { key: "endTime", label: "終了時刻（任意）", type: "time" },
+        { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+        { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
+      ], t);
+      if (!v || !v.title) return;
+      try {
+        DB.day = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags }) });
+      } catch (err) { toast(err.message, "x"); return; }
+      rerender();
+    }));
+
+    // 追加（タイトル＋任意の開始/終了時刻・カテゴリー・タグ）
     $("#addTask").addEventListener("click", async () => {
       const v = await modal("やることを追加", [
         { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
-        { key: "time", label: "時刻（任意）", type: "time" },
+        { key: "time", label: "開始時刻（任意）", type: "time" },
+        { key: "endTime", label: "終了時刻（任意）", type: "time" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
       ]);
       if (!v || !v.title) return;
-      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, time: v.time, cat: v.cat, tags: v.tags }) });
+      DB.day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags }) });
       rerender();
     });
 

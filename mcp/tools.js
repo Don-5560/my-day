@@ -41,24 +41,54 @@ export const TOOLS = [
   },
   {
     name: "add_task",
-    description: "今日（または指定日）の「今日のやること」に1件追加する。その日にやる小さいタスク向け。期限付き・カテゴリー付きの管理はadd_todoを使う。",
+    description: "今日（または指定日）の「今日のやること」に1件追加する。時間割に載せるなら開始/終了時刻を指定できる。期限付き・カテゴリー付きの継続管理はadd_todoを使う。",
     inputSchema: {
       type: "object",
       properties: {
         title: { type: "string" },
+        time: { type: "string", description: "開始時刻 HH:MM（任意）" },
+        endTime: { type: "string", description: "終了時刻 HH:MM（任意）" },
+        cat: { type: "string", enum: CATS, description: "カテゴリー（任意）" },
         date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
       },
       required: ["title"],
     },
   },
   {
+    name: "set_schedule",
+    description: "今日（または指定日）の1日のスケジュールをまとめて組み直す。渡したtasks配列で予定を置き換える。既存タスクと同じtitleのものは完了状態・実績時間を引き継ぐので、再計画で進捗が消えない。ユーザーの1日の予定を作る/更新するときはこれを使う。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tasks: {
+          type: "array",
+          description: "時刻順の予定。各要素 {title, time?(HH:MM), endTime?(HH:MM), cat?, tags?}",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              time: { type: "string", description: "開始 HH:MM" },
+              endTime: { type: "string", description: "終了 HH:MM" },
+              cat: { type: "string", enum: CATS },
+              tags: { type: "array", items: { type: "string" } },
+            },
+            required: ["title"],
+          },
+        },
+        date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
+      },
+      required: ["tasks"],
+    },
+  },
+  {
     name: "complete_task",
-    description: "「今日のやること」のタスクを完了/未完了にする。done省略で反転。完了時はXPが入る。",
+    description: "「今日のやること」のタスクを完了/未完了にする。done省略で反転。完了時はXPが入る。spentMinを渡すと実績時間(分)も記録する。",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "タスクID（get_todayで取得）" },
         done: { type: "boolean" },
+        spentMin: { type: "number", description: "実績の所要時間（分・任意）" },
         date: { type: "string" },
       },
       required: ["id"],
@@ -235,7 +265,7 @@ export async function callTool(name, args = {}) {
         level: levelOf(events),
         todayGoal: settings?.todayGoal || "",
         monthGoal: settings?.monthGoal || "",
-        todayTasks: day.tasks.map((t) => ({ id: t.id, title: t.title, done: t.done })),
+        todayTasks: day.tasks.map((t) => ({ id: t.id, title: t.title, done: t.done, time: t.time || "", endTime: t.endTime || "", cat: t.cat || "", spentMin: t.spentMin || 0 })),
         weekTodos: todos
           .filter((t) => !t.done && t.due && t.due <= lim)
           .map((t) => ({ id: t.id, title: t.title, cat: t.cat, pri: t.pri, due: t.due })),
@@ -255,14 +285,26 @@ export async function callTool(name, args = {}) {
       return store.getDay(args.date || store.today());
 
     case "add_task": {
-      const { task, day } = await store.addTask(args.date || store.today(), args.title, "ai");
+      const { title, time, endTime, cat } = args;
+      const { task, day } = await store.addTask(args.date || store.today(), title, "ai", { time, endTime, cat });
       return { added: task, tasks: day.tasks };
     }
 
+    case "set_schedule": {
+      const day = await store.setSchedule(args.date || store.today(), args.tasks || [], "ai");
+      return { date: day.date, tasks: day.tasks };
+    }
+
     case "complete_task": {
-      const { task } = await store.setTaskDone(args.date || store.today(), args.id, args.done);
+      const date = args.date || store.today();
+      const { task } = await store.setTaskDone(date, args.id, args.done);
       if (task.done) await awardXp(XP.task, "タスク完了");
-      return { updated: task };
+      // 実績時間が渡されていれば所要時間(分)も記録
+      let updated = task;
+      if (typeof args.spentMin === "number") {
+        updated = (await store.updateTask(date, args.id, { spentMin: args.spentMin })).task;
+      }
+      return { updated };
     }
 
     case "write_diary": {
