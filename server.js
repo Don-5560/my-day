@@ -236,6 +236,8 @@ app.get("/api/days", wrap(async (req, res) => {
 
 // 汎用データ（モジュールごとのJSON文書: todos / study / sales / xp など）
 app.get("/api/data/:key", wrap(async (req, res) => {
+  // 売上明細は収入トランザクションのミラー。取得前に移行＋バックフィルを保証する。
+  if (req.params.key === "sales") await store.ensureMigrated();
   res.json(await store.getDoc(req.params.key));
 }));
 app.put("/api/data/:key", wrap(async (req, res) => {
