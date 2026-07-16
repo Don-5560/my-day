@@ -321,26 +321,15 @@ export async function callTool(name, args = {}) {
     }
 
     case "log_sale": {
-      const doc = (await store.getDoc("sales")) ?? { logs: [] };
-      const log = {
-        id: randomUUID(),
-        date: args.date || store.today(),
-        amount: Math.round(args.amount),
-        source: ["Web制作", "Uber", "その他"].includes(args.source) ? args.source : "その他",
-        memo: args.memo || "",
-      };
-      doc.logs.push(log);
-      await store.saveDoc("sales", doc);
-      // 二重書き: 売上は収入として transactions にも記録する（残高計算はこちらを集計）。
-      // フロントの売上画面は従来どおり doc:sales を読むので後方互換は保たれる。
-      if (Number.isInteger(log.amount) && log.amount > 0) {
-        await store.addTransaction({
-          type: "income", amount: log.amount, category: log.source,
-          date: log.date, memo: log.memo, source: "sale",
-        });
-      }
-      const xp = await awardXp(Math.min(Math.round(log.amount / 1000), 300), "売上を記録");
-      return { logged: log, xp };
+      const amount = Math.round(args.amount);
+      const source = ["Web制作", "Uber", "その他"].includes(args.source) ? args.source : "その他";
+      // 収入トランザクションとして記録 → addTransaction 内で売上明細(doc:sales)にも自動ミラーされる。
+      const tx = await store.addTransaction({
+        type: "income", amount, category: source,
+        date: args.date || store.today(), memo: args.memo || "", source: "sale",
+      });
+      const xp = await awardXp(Math.min(Math.round(amount / 1000), 300), "売上を記録");
+      return { logged: tx, xp };
     }
 
     case "set_initial_balance":

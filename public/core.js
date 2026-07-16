@@ -91,6 +91,8 @@ async function saveDb(key) {
 }
 // お金の残高・今月収支を取り直す（取引を追加/削除したあとに呼ぶ）
 async function refreshFinance() { DB.finance = await api("/api/finance"); }
+// 売上明細（doc:sales）を取り直す（収入トランザクションがミラーされるため）
+async function refreshSales() { DB.sales = (await api("/api/data/sales")) ?? { logs: [] }; }
 
 // ===== XP・レベル =====
 

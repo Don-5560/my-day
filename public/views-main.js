@@ -9,13 +9,13 @@ const NAV_GROUPS = [
   { label: "グロース", items: ["goals", "badges", "analytics", "calendar"] },
   { label: "", items: ["settings"] },
 ];
-const BOTTOM_NAV = ["calendar", "todo", "home", "report", "menu"];
+const BOTTOM_NAV = ["calendar", "todo", "home", "habits", "menu"];
 // 右ドロワーの構成（モバイルの「メニュー」から開く）
 const DRAWER_GROUPS = [
   { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "売上・収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
   { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"]] },
-  { label: "人生・習慣", items: [["habits", "習慣トラッカー"], ["goals", "目標管理"], ["badges", "実績・バッジ"]] },
-  { label: "分析・レポート", items: [["analytics", "分析・レポート"]] },
+  { label: "人生・習慣", items: [["goals", "目標管理"], ["badges", "実績・バッジ"]] },
+  { label: "分析・レポート", items: [["report", "日報"], ["analytics", "分析・レポート"]] },
 ];
 
 const CAT_COLORS = { "勉強": "var(--accent)", "制作": "var(--violet)", "営業": "var(--green)", "生活": "var(--amber)", "趣味": "var(--pink)" };
@@ -186,7 +186,10 @@ VIEWS.home = {
 
       <div class="card">
         <div class="card-head"><h2>${icon("flame", 15)} 最近の活動</h2>
-          <button class="link-more" data-go="analytics">すべて見る ${icon("chevR", 12)}</button></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button class="link-more" data-go="analytics">すべて見る ${icon("chevR", 12)}</button>
+            <button class="btn sm" id="logActivity">${icon("plus", 13)} 記録</button>
+          </div></div>
         ${acts.map((e) => {
           const b = activityBadge(e.why);
           return `<div class="list-item">
@@ -244,9 +247,75 @@ VIEWS.home = {
       rerender();
     });
 
+    $("#logActivity").addEventListener("click", logActivity);
     $$("[data-go]", main).forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
   },
 };
+
+// 「やったことを記録」: 種類を選ぶと、対応する管理ページ（勉強/売上/営業/作品）に自動で記録される
+async function logActivity() {
+  const types = [
+    { key: "study", label: "勉強", icon: "timer" },
+    { key: "sale", label: "売上", icon: "yen" },
+    { key: "outreach", label: "営業", icon: "send" },
+    { key: "work", label: "作品", icon: "layers" },
+  ];
+  const pick = await new Promise((resolve) => {
+    const wrap = $("#modalWrap");
+    wrap.innerHTML = `<div class="overlay"><div class="modal" style="width:min(94vw,360px)">
+      <div class="modal-head"><h3>やったことを記録</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <div class="act-grid">${types.map((t) => `<button type="button" class="act-btn" data-t="${t.key}">${icon(t.icon, 22)}<span>${t.label}</span></button>`).join("")}</div>
+    </div></div>`;
+    const close = (r) => { wrap.innerHTML = ""; resolve(r); };
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
+    $$("[data-t]", wrap).forEach((b) => b.addEventListener("click", () => close(b.dataset.t)));
+  });
+  if (!pick) return;
+
+  if (pick === "study") {
+    const v = await modal("勉強を記録", [
+      { key: "min", label: "分", type: "number", placeholder: "60" },
+      { key: "subject", label: "科目", type: "select", options: ["一般", ...DB.learning.items.map((i) => i.name), "その他"] },
+      { key: "date", label: "日付", type: "date", default: todayStr() },
+    ]);
+    if (!v || !v.min) return;
+    DB.study.logs.push({ id: uid(), date: v.date || todayStr(), min: v.min, subject: v.subject, src: "manual" });
+    await saveDb("study"); await addXP(Math.min(v.min, 120), "勉強を記録"); toast("勉強を記録しました");
+  } else if (pick === "sale") {
+    const v = await modal("売上を記録", [
+      { key: "amount", label: "金額（円）", type: "money", placeholder: "50000" },
+      { key: "source", label: "収入源", type: "select", options: SALE_SOURCES },
+      { key: "date", label: "日付", type: "date", default: todayStr() },
+      { key: "memo", label: "メモ", type: "text" },
+    ]);
+    if (!v || !v.amount) return;
+    try { await api("/api/transactions", { method: "POST", body: JSON.stringify({ type: "income", amount: Math.round(v.amount), category: v.source, date: v.date || todayStr(), memo: v.memo }) }); }
+    catch (e) { toast(e.message, "x"); return; }
+    await refreshSales(); await addXP(Math.min(Math.round(v.amount / 1000), 300), "売上を記録"); toast("売上を記録しました");
+  } else if (pick === "outreach") {
+    const v = await modal("営業を記録", [
+      { key: "channel", label: "チャネル", type: "select", options: ["Instagram", "X", "TikTok", "メール", "DM", "その他"] },
+      { key: "sent", label: "送信数", type: "number" },
+      { key: "replies", label: "返信数", type: "number" },
+      { key: "orders", label: "受注数", type: "number" },
+      { key: "date", label: "日付", type: "date", default: todayStr() },
+    ]);
+    if (!v || !v.channel) return;
+    DB.outreach.logs.push({ id: uid(), date: v.date || todayStr(), channel: v.channel, sent: v.sent, replies: v.replies, orders: v.orders });
+    await saveDb("outreach"); await addXP(5, "営業を記録"); toast("営業を記録しました");
+  } else if (pick === "work") {
+    const v = await modal("作品を追加", [
+      { key: "name", label: "作品名", type: "text", placeholder: "例: ○○のLP" },
+      { key: "progress", label: "進捗", type: "range" },
+      { key: "link", label: "リンク（任意）", type: "url" },
+    ]);
+    if (!v || !v.name) return;
+    DB.portfolio.items.push({ id: uid(), name: v.name, progress: v.progress || 0, link: v.link || "", memo: "" });
+    await saveDb("portfolio"); await addXP(10, "作品を追加"); toast("作品を追加しました");
+  }
+  rerender();
+}
 setInterval(() => { const c = $("#clock"); if (c) { const d = new Date(); c.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":"); } }, 1000);
 
 // ===== Todo =====

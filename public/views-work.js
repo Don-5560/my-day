@@ -278,7 +278,8 @@ const SALE_SOURCES = ["Web制作", "Uber", "その他"];
 
 VIEWS.sales = {
   title: "売上", icon: "yen",
-  render(main) {
+  async render(main) {
+    await refreshSales(); // 収入トランザクションのミラーを反映
     const logs = DB.sales.logs;
     const mk = monthKey(todayStr());
     const monthSum = (key) => logs.filter((l) => monthKey(l.date) === key).reduce((s, l) => s + l.amount, 0);
@@ -330,14 +331,21 @@ VIEWS.sales = {
         { key: "memo", label: "メモ", type: "text", placeholder: "例: ◯◯様 LP制作" },
       ]);
       if (!v || !v.amount) return;
-      DB.sales.logs.push({ id: uid(), ...v, date: v.date || todayStr() });
-      await saveDb("sales");
+      // 収入トランザクションとして記録（残高にも反映＆売上明細にミラー）
+      try {
+        await api("/api/transactions", { method: "POST", body: JSON.stringify({ type: "income", amount: Math.round(v.amount), category: v.source, date: v.date || todayStr(), memo: v.memo }) });
+      } catch (e) { toast(e.message, "x"); return; }
+      await refreshSales();
       await addXP(Math.min(Math.round(v.amount / 1000), 300), "売上を記録！");
       rerender();
     });
     $$("[data-del]").forEach((b) => b.addEventListener("click", async () => {
-      DB.sales.logs = DB.sales.logs.filter((x) => x.id !== b.dataset.del);
-      await saveDb("sales"); rerender();
+      const entry = DB.sales.logs.find((x) => x.id === b.dataset.del);
+      try {
+        if (entry?.txId) await api("/api/transactions/" + entry.txId, { method: "DELETE" }); // 取引ごと消す（残高も戻る）
+        else { DB.sales.logs = DB.sales.logs.filter((x) => x.id !== b.dataset.del); await saveDb("sales"); }
+      } catch (e) { toast(e.message, "x"); return; }
+      await refreshSales(); rerender();
     }));
   },
 };
@@ -421,6 +429,7 @@ VIEWS.money = {
           body: JSON.stringify({ type, amount: Math.round(v.amount), category: v.category, date: v.date || todayStr(), memo: v.memo }),
         });
       } catch (e) { toast(e.message, "x"); return; }
+      if (type === "income") await refreshSales(); // 収入は売上明細にもミラーされるので反映
       toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
       rerender();
     };
@@ -440,6 +449,7 @@ VIEWS.money = {
     $$("[data-del]").forEach((b) => b.addEventListener("click", async () => {
       try { await api("/api/transactions/" + b.dataset.del, { method: "DELETE" }); }
       catch (e) { toast(e.message, "x"); return; }
+      await refreshSales(); // ミラーの売上明細も消えるので反映
       rerender();
     }));
   },
@@ -684,12 +694,22 @@ VIEWS.calendar = {
     catch (e) { $("#calBody").innerHTML = `<p class="empty">読み込み失敗: ${esc(e.message)}</p>`; return; }
     if (CURRENT !== "calendar") return;
 
-    if (CAL.view === "month") calRenderMonth($("#calBody"), map);
-    else calRenderTime($("#calBody"), map, from, to);
+    CAL._map = map; CAL._from = from; CAL._to = to;
+    calRefreshBody();
+    if (CAL._openIso && CAL._openIso >= from && CAL._openIso <= to) calShowDetail(CAL._openIso);
   },
 };
 
-function calRenderMonth(el, map) {
+function calRefreshBody() {
+  const el = $("#calBody");
+  if (!el) return;
+  el.style.padding = CAL.view === "month" ? "" : "10px";
+  if (CAL.view === "month") calRenderMonth(el);
+  else calRenderTime(el, CAL._from, CAL._to);
+}
+
+function calRenderMonth(el) {
+  const map = CAL._map;
   const [from] = calRange();
   const anchorMonth = new Date(CAL.anchor + "T00:00:00").getMonth();
   const today = todayStr();
@@ -708,10 +728,11 @@ function calRenderMonth(el, map) {
   }
   el.innerHTML = `<div class="cal-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div>
     <div class="cal-grid">${cells}</div>`;
-  $$(".cal-cell", el).forEach((b) => b.addEventListener("click", () => calShowDetail(b.dataset.day, map)));
+  $$(".cal-cell", el).forEach((b) => b.addEventListener("click", () => calShowDetail(b.dataset.day)));
 }
 
-function calRenderTime(el, map, from, to) {
+function calRenderTime(el, from, to) {
+  const map = CAL._map;
   const days = [];
   for (let iso = from; iso <= to; iso = calAdd(iso, 1)) days.push(iso);
   const H0 = 6, H1 = 24, rowH = 44, today = todayStr();
@@ -743,31 +764,58 @@ function calRenderTime(el, map, from, to) {
       </div></div>`;
   }).join("");
 
-  el.style.padding = "10px";
   el.innerHTML = `<div class="cal-time cols-${days.length}">${axis}<div class="cal-cols">${cols}</div></div>`;
-  $$("[data-ev]", el).forEach((b) => b.addEventListener("click", () => calShowDetail(b.dataset.ev, map)));
+  $$("[data-ev]", el).forEach((b) => b.addEventListener("click", () => calShowDetail(b.dataset.ev)));
 }
 
-function calShowDetail(iso, map) {
-  const day = map[iso], xp = calXp(iso), study = calStudy(iso);
+function calShowDetail(iso) {
+  CAL._openIso = iso;
+  const day = CAL._map[iso], xp = calXp(iso), study = calStudy(iso);
   const sales = DB.sales.logs.filter((l) => l.date === iso).reduce((s, l) => s + l.amount, 0);
+  const tasks = day ? [...day.tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")) : [];
   const el = $("#calDetail");
   el.style.display = "";
   el.innerHTML = `
-    <div class="card-head"><h2>${icon("calendar", 15)} ${fmtJP(iso)}</h2></div>
+    <div class="card-head"><h2>${icon("calendar", 15)} ${fmtJP(iso)}</h2>
+      <button class="btn ghost sm" id="calAddTask">${icon("plus", 14)} 追加</button></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <span class="pill acc">${icon("zap", 11)} ${xp} XP</span>
       <span class="pill">${icon("timer", 11)} ${fmtMin(study) || "0分"}</span>
-      ${day ? `<span class="pill">${icon("check", 11)} ${day.tasks.filter((t) => t.done).length}/${day.tasks.length} タスク</span>` : ""}
+      <span class="pill">${icon("check", 11)} ${tasks.filter((t) => t.done).length}/${tasks.length} タスク</span>
       ${sales ? `<span class="pill grn">${fmtYen(sales)}</span>` : ""}
     </div>
-    ${day && day.tasks.length ? day.tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}">
-      <span class="li-ic">${icon(t.done ? "checkline" : "clock", 14)}</span>
+    <div id="calDetailTasks">${tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}">
+      <input type="checkbox" class="checkbox" data-cdchk="${t.id}" ${t.done ? "checked" : ""}>
       ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
       <div class="li-body"><div class="li-title">${esc(t.title)}</div></div>
       ${t.spentMin ? `<span class="pill grn">${fmtHM(t.spentMin)}</span>` : ""}
-    </div>`).join("") : '<p class="empty">この日のタスクはありません</p>'}
+      <button class="icon-btn danger" data-cddel="${t.id}">${icon("trash", 13)}</button>
+    </div>`).join("") || '<p class="empty">この日のタスクはありません</p>'}</div>
     ${day?.diary ? `<p class="small" style="white-space:pre-wrap;margin:12px 0 0;color:var(--muted)">${esc(day.diary)}</p>` : ""}`;
+
+  const refresh = (updatedDay) => { CAL._map[iso] = updatedDay; if (iso === todayStr()) DB.day = updatedDay; calRefreshBody(); calShowDetail(iso); };
+
+  $("#calAddTask").addEventListener("click", async () => {
+    const v = await modal(`${fmtJP(iso)} に追加`, [
+      { key: "title", label: "やること", type: "text", placeholder: "何をやった？" },
+      { key: "time", label: "時刻（任意）", type: "time" },
+      { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+      { key: "tags", label: "タグ（任意）", type: "tags" },
+    ]);
+    if (!v || !v.title) return;
+    const d = await api("/api/tasks", { method: "POST", body: JSON.stringify({ date: iso, title: v.title, time: v.time, cat: v.cat, tags: v.tags }) });
+    refresh(d);
+  });
+  $$("#calDetailTasks [data-cdchk]").forEach((cb) => cb.addEventListener("change", async () => {
+    const d = await api("/api/tasks/" + cb.dataset.cdchk, { method: "PATCH", body: JSON.stringify({ date: iso, done: cb.checked }) });
+    if (cb.checked) await addXP(XP_RULES.task, "タスク完了");
+    refresh(d);
+  }));
+  $$("#calDetailTasks [data-cddel]").forEach((b) => b.addEventListener("click", async () => {
+    const d = await api("/api/tasks/" + b.dataset.cddel + "?date=" + iso, { method: "DELETE" });
+    refresh(d);
+  }));
+
   el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 

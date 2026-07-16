@@ -60,6 +60,8 @@ body {
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "tnum";
   transition: background .3s, color .3s;
+  touch-action: manipulation;         /* ダブルタップ拡大を無効化 */
+  -webkit-text-size-adjust: 100%;      /* 文字サイズの自動拡大を無効化 */
 }
 
 .bg-glow { display: none; }
@@ -553,6 +555,16 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 }
 .cal-ev b { display: block; font-size: 10px; color: var(--muted); font-weight: 600; }
 .cal-ev.done { opacity: .55; text-decoration: line-through; }
+
+/* やったことを記録（チューザー） */
+.act-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.act-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 10px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .18s;
+}
+.act-btn .ic { color: var(--accent); }
+.act-btn:hover { border-color: var(--accent-line); background: var(--surface-2); }
 
 /* テーマ切替（設定） */
 .theme-toggle { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }
