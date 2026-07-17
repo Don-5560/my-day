@@ -364,11 +364,11 @@ VIEWS.home = {
 
     // 予定の編集（日付を変えると別の日へ移動）
     const editTask = async (date, t) => {
-      const v = await modal("予定を編集", [
+      const v = await modalWithCatAdd("予定を編集", [
         { key: "title", label: "やること", type: "text" },
         { key: "date", label: "日付", type: "date", default: date },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
-        { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+        { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea", placeholder: "例: ヒーロー部分まで完成。残りは明日。" },
       ], { ...t, date });
@@ -460,11 +460,11 @@ VIEWS.home = {
     // 追加（既定の日付は表示中の日。開始/終了時刻・カテゴリー・タグ・メモ）
     $("#addTask").addEventListener("click", async () => {
       const viewDate = SCHED_DATE || todayStr();
-      const v = await modal("やることを追加", [
+      const v = await modalWithCatAdd("やることを追加", [
         { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
         { key: "date", label: "日付", type: "date", default: viewDate },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
-        { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+        { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（任意）", type: "textarea", placeholder: "例: ◯◯様向け" },
       ]);
@@ -614,21 +614,21 @@ VIEWS.todo = {
             <input type="text" id="todoSearch" placeholder="検索…" value="${esc(TODO_FILTER.q)}" style="padding-left:38px">
           </div>
         </div>
-        <div class="tabs">${["すべて", ...CATS].map((c) =>
+        <div class="tabs">${["すべて", ...CATS, ...(DB.categories.task || [])].map((c) =>
           `<button class="tab ${TODO_FILTER.cat === c ? "active" : ""}" data-cat="${c}">${c}</button>`).join("")}</div>
       </div>
       <div class="todo-grid">${SECTIONS.map(sectionHTML).join("")}</div>`;
 
-    const FIELDS = [
+    const FIELDS = () => [
       { key: "title", label: "タイトル", type: "text", placeholder: "何をやる？" },
-      { key: "cat", label: "カテゴリー", type: "select", options: CATS },
+      { key: "cat", label: "カテゴリー", type: "select", options: [...CATS, ...(DB.categories.task || [])] },
       { key: "pri", label: "優先度", type: "select", options: PRIS },
       { key: "due", label: "締切", type: "date" },
       { key: "tags", label: "タグ", type: "tags", placeholder: "例: LP, 営業資料" },
     ];
 
     $("#addTodo").addEventListener("click", async () => {
-      const v = await modal("Todoを追加", FIELDS, { cat: "制作", pri: "中" });
+      const v = await modalWithCatAdd("Todoを追加", FIELDS(), { cat: "制作", pri: "中" });
       if (!v || !v.title) return;
       DB.todos.items.push({ id: uid(), ...v, done: false, createdAt: Date.now(), order: DB.todos.items.length });
       await saveDb("todos"); rerender();
@@ -649,7 +649,7 @@ VIEWS.todo = {
     }));
     $$("[data-edit]", main).forEach((b) => b.addEventListener("click", async () => {
       const t = DB.todos.items.find((x) => x.id === b.dataset.edit);
-      const v = await modal("Todoを編集", FIELDS, t);
+      const v = await modalWithCatAdd("Todoを編集", FIELDS(), t);
       if (!v || !v.title) return;
       Object.assign(t, v); await saveDb("todos"); rerender();
     }));

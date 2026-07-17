@@ -51,6 +51,8 @@ function applyTheme(t) {
 const DB = {};
 const DOC_DEFAULTS = {
   settings: { name: "しどう", todayGoal: "", monthGoal: "", salesGoal: 300000, dailyStudyGoalMin: 360, dailySalesGoal: 20000 },
+  categories: { income: [], expense: [], task: [] }, // ユーザーが追加した収入/支出/予定カテゴリー
+
   todos: { items: [] },
   study: { logs: [] },          // {id,date,min,subject,src}
   habits: { list: [], checks: {} },
@@ -233,6 +235,26 @@ function modal(title, fields, values = {}) {
       close(out);
     });
   });
+}
+
+// カテゴリーselectに「新規追加」を足したモーダル。選ぶと名前を聞いて保存し、他の入力済み項目は保持したまま再表示する
+const NEW_CAT_OPT = "＋ 新しいカテゴリーを追加";
+async function modalWithCatAdd(title, fields, values = {}, catKey = "cat", docKey = "task") {
+  const idx = fields.findIndex((f) => f.key === catKey);
+  for (;;) {
+    fields[idx] = { ...fields[idx], options: [...fields[idx].options.filter((o) => o !== NEW_CAT_OPT), NEW_CAT_OPT] };
+    const v = await modal(title, fields, values);
+    if (!v) return null;
+    if (v[catKey] !== NEW_CAT_OPT) return v;
+    const nv = await modal("新しいカテゴリーを追加", [{ key: "name", label: "カテゴリー名", type: "text", placeholder: "例）読書" }]);
+    values = { ...v, [catKey]: values[catKey] || "" };
+    if (!nv || !nv.name) continue;
+    DB.categories = DB.categories || { expense: [], task: [] };
+    DB.categories[docKey] = [...(DB.categories[docKey] || []), nv.name];
+    try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); continue; }
+    fields[idx].options.push(nv.name);
+    values = { ...v, [catKey]: nv.name };
+  }
 }
 
 function confirmBox(msg) {

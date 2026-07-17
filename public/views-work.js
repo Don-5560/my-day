@@ -358,7 +358,6 @@ VIEWS.sales = {
 
 const TX_INCOME_CATS = ["Web制作", "Uber", "その他"];
 const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他"];
-const NEW_CAT_OPT = "＋ 新しいカテゴリーを追加";
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
 
 VIEWS.money = {
@@ -369,15 +368,14 @@ VIEWS.money = {
       <div class="page-head"><div><p class="eyebrow">Money</p><h1>お金</h1></div></div>
       <p class="empty">読み込み中…</p>`;
 
-    let fin, txs, catsDoc;
+    let fin, txs;
     try {
-      [fin, txs, catsDoc] = await Promise.all([api("/api/finance"), api("/api/transactions?month=" + mk), api("/api/data/categories")]);
+      [fin, txs] = await Promise.all([api("/api/finance"), api("/api/transactions?month=" + mk)]);
     } catch (e) {
       main.innerHTML = `<p class="empty">読み込みに失敗しました: ${esc(e.message)}</p>`;
       return;
     }
     DB.finance = fin;
-    catsDoc = catsDoc || {};
     if (CURRENT !== "money") return; // 取得中に他画面へ移動していたら描画しない
 
     const groupByCat = (list) => {
@@ -434,22 +432,8 @@ VIEWS.money = {
         { key: "category", label: "カテゴリ", type: "select", options: cats },
         { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
       ];
-      const v = await modal(type === "income" ? "収入を追加" : "支出を追加", fields);
-      if (!v) return;
-      if (v.category === NEW_CAT_OPT) {
-        // 「＋ 新しいカテゴリーを追加」が選ばれたら名前を聞いて保存し、追加後の一覧で入力し直してもらう
-        const nv = await modal("新しいカテゴリーを追加", [
-          { key: "name", label: "カテゴリー名", type: "text", placeholder: "例）交通費" },
-        ]);
-        if (!nv || !nv.name) return;
-        catsDoc = { ...catsDoc, expense: [...(catsDoc.expense || []), nv.name] };
-        try {
-          await api("/api/data/categories", { method: "PUT", body: JSON.stringify(catsDoc) });
-        } catch (e) { toast(e.message, "x"); return; }
-        toast("カテゴリーを追加しました");
-        return addTx(type, [...TX_EXPENSE_CATS, ...catsDoc.expense, NEW_CAT_OPT]);
-      }
-      if (!v.amount) return;
+      const v = await modalWithCatAdd(type === "income" ? "収入を追加" : "支出を追加", fields, {}, "category", type);
+      if (!v || !v.amount) return;
       try {
         if (type === "income") {
           // 収入(売上)＋任意の経費を記録。残高に反映＆売上明細にミラー、利益も計算できる。
@@ -468,8 +452,8 @@ VIEWS.money = {
       toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
       rerender();
     };
-    $("#addIncome").addEventListener("click", () => addTx("income", TX_INCOME_CATS));
-    $("#addExpense").addEventListener("click", () => addTx("expense", [...TX_EXPENSE_CATS, ...(catsDoc.expense || []), NEW_CAT_OPT]));
+    $("#addIncome").addEventListener("click", () => addTx("income", [...TX_INCOME_CATS, ...(DB.categories.income || [])]));
+    $("#addExpense").addEventListener("click", () => addTx("expense", [...TX_EXPENSE_CATS, ...(DB.categories.expense || [])]));
     $("#setInit").addEventListener("click", async () => {
       const v = await modal("初期残高を設定", [
         { key: "amount", label: "初期残高（円）", type: "money", default: fin.initialBalance, placeholder: "100000" },
@@ -837,10 +821,10 @@ function calShowDetail(iso) {
   const refresh = (updatedDay) => { CAL._map[iso] = updatedDay; if (iso === todayStr()) DB.day = updatedDay; calRefreshBody(); calShowDetail(iso); };
 
   $("#calAddTask").addEventListener("click", async () => {
-    const v = await modal(`${fmtJP(iso)} に追加`, [
+    const v = await modalWithCatAdd(`${fmtJP(iso)} に追加`, [
       { key: "title", label: "やること", type: "text", placeholder: "何をやった？" },
       { key: "time", label: "時刻（任意）", type: "time" },
-      { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+      { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
       { key: "tags", label: "タグ（任意）", type: "tags" },
     ]);
     if (!v || !v.title) return;
@@ -849,11 +833,11 @@ function calShowDetail(iso) {
   });
   // タップ→詳細。そこから編集（右上）・削除・完了トグル。
   const editCalTask = async (t) => {
-    const v = await modal(`${fmtJP(iso)} の予定を編集`, [
+    const v = await modalWithCatAdd(`${fmtJP(iso)} の予定を編集`, [
       { key: "title", label: "やること", type: "text" },
       { key: "date", label: "日付", type: "date", default: iso },
       { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
-      { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+      { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
       { key: "tags", label: "タグ（任意）", type: "tags" },
       { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea" },
     ], { ...t, date: iso });
