@@ -234,7 +234,9 @@ function openDrawer() {
   });
   $("#drawerOverlay").addEventListener("click", closeDrawer);
   $("#drawerClose").addEventListener("click", closeDrawer);
-  $$("#drawer .drawer-item").forEach((b) => b.addEventListener("click", () => { playTapAnim(b); closeDrawer(); go(b.dataset.view); }));
+  // ドロワーが閉じきる前にページが切り替わると、閉じるアニメーション中のタップ演出が新しいページの上に残像として残るため、
+  // 閉じるアニメーション(.3s)が終わってからページを切り替える
+  $$("#drawer .drawer-item").forEach((b) => b.addEventListener("click", () => { playTapAnim(b); closeDrawer(); setTimeout(() => go(b.dataset.view), 300); }));
   attachSwipe($("#drawer"), (dir) => { if (dir === "right") closeDrawer(); }); // 右スワイプで閉じる
 }
 
