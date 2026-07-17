@@ -283,10 +283,13 @@ VIEWS.home = {
       <div class="greet">
         <div class="greet-top">
           <h1 class="greet-hello">おかえり、${esc(S.name || "しどう")} <span class="wave">👋</span></h1>
+          <div class="greet-now">
+            <span class="gn-date">${esc(fmtJP(todayStr()))}</span>
+            <span id="clock" class="gn-time">${new Date().toTimeString().slice(0, 8)}</span>
+          </div>
         </div>
         <div class="greet-sub">
           <p>${esc(S.todayGoal) || "今日も最高の1日にしよう。"}</p>
-          <span class="greet-date">${fmtDateFull(todayStr())}</span>
         </div>
       </div>
 
