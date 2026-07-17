@@ -75,6 +75,28 @@ body {
     overscroll-behavior-y: contain;      /* ブラウザ標準の引っ張り更新を抑え、自前のPTRを使う */
   }
 }
+/* :hoverはマウスなど本当にホバーできる環境だけに限定する。
+   タッチ端末だとタップが:hoverとして残り、スクロール/スワイプ中にハイライトが張り付いて操作しづらくなるため */
+@media (hover: hover) and (pointer: fine) {
+  .nav-item:hover { background: var(--surface-2); color: var(--ink); }
+  .link-more:hover { text-decoration: underline; }
+  .stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .btn:hover { filter: brightness(1.06); }
+  .btn.ghost:hover { color: var(--ink); filter: none; border-color: var(--faint); }
+  .btn.danger:hover { background: rgba(239,68,68,.10); filter: none; }
+  .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+  .icon-btn.danger:hover { color: var(--red); background: rgba(239,68,68,.10); }
+  .row:hover { background: var(--surface-2); }
+  .row:hover .row-del, .row:hover .row-edit { opacity: 1; }
+  .plan-item:hover { background: var(--surface-2); }
+  #pbdList .plan-bd-row:hover { background: var(--surface-2); }
+  .hm-cell:hover { transform: scale(1.25); }
+  .mood-btn:hover { color: var(--ink); }
+  .drawer-item:hover { background: var(--surface-2); }
+  .menu-item:hover { border-color: var(--accent-line); transform: translateY(-2px); }
+  .cal-cell:hover { border-color: var(--accent-line); }
+  .act-btn:hover { border-color: var(--accent-line); background: var(--surface-2); }
+}
 
 /* 上から引っ張って更新のインジケーター */
 #ptr {
@@ -167,7 +189,6 @@ body {
   cursor: pointer; transition: background .18s, color .18s;
   text-align: left;
 }
-.nav-item:hover { background: var(--surface-2); color: var(--ink); }
 .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .nav-item .ic { flex: 0 0 auto; }
 
@@ -232,7 +253,6 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
 .card-head h2 { margin: 0; }
 .link-more { background: none; border: none; color: var(--accent); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 3px; }
-.link-more:hover { text-decoration: underline; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -258,7 +278,6 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
   padding: 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow);
   transition: transform .22s, box-shadow .22s;
 }
-.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 .stat .s-ic {
   width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
   background: var(--accent-soft); color: var(--accent);
@@ -347,12 +366,9 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
   background: var(--accent); color: #fff;
   transition: filter .18s, transform .08s, box-shadow .18s;
 }
-.btn:hover { filter: brightness(1.06); }
 .btn:active { transform: translateY(1px); }
 .btn.ghost { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
-.btn.ghost:hover { color: var(--ink); filter: none; border-color: var(--faint); }
 .btn.danger { background: transparent; color: var(--red); border: 1px solid var(--line); }
-.btn.danger:hover { background: rgba(239,68,68,.10); filter: none; }
 .btn.wide { width: 100%; }
 .btn.sm { padding: 7px 12px; font-size: 12.5px; border-radius: 10px; }
 
@@ -361,8 +377,7 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
   border: none; border-radius: 9px; background: none; color: var(--muted);
   cursor: pointer; transition: background .15s, color .15s; padding: 0;
 }
-.icon-btn:hover { background: var(--surface-2); color: var(--ink); }
-.icon-btn.danger:hover { color: var(--red); background: rgba(239,68,68,.10); }
+
 
 input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="url"], select, textarea {
   width: 100%; min-width: 0; max-width: 100%; font: inherit; font-size: 14px; color: var(--ink);
@@ -409,8 +424,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   display: flex; align-items: center; gap: 11px;
   padding: 10px 8px; border-radius: 12px; transition: background .15s;
 }
-.row:hover { background: var(--surface-2); }
-.row:hover .row-del, .row:hover .row-edit { opacity: 1; }
 .row-del, .row-edit { opacity: 0; transition: opacity .15s; }
 @media (max-width: 960px) { .row-del, .row-edit { opacity: .6; } }
 .row-title { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -418,7 +431,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .row-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* 予想収支の項目: 見出し行（タイトル/金額）と内訳を別ブロックにして必ず改行する */
 .plan-item { padding: 10px 8px; border-radius: 12px; cursor: pointer; transition: background .15s; }
-.plan-item:hover { background: var(--surface-2); }
 .plan-item-head { display: flex; align-items: center; gap: 11px; }
 .plan-detail-line {
   display: flex; justify-content: space-between; gap: 12px; max-width: 280px; margin: 4px 0 0 2px;
@@ -432,7 +444,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 }
 /* 項目一覧では表示のみ（追加/編集はモーダルの中で行う）。モーダル内（#pbdList）だけタップ可能にする */
 #pbdList .plan-bd-row { cursor: pointer; }
-#pbdList .plan-bd-row:hover { background: var(--surface-2); }
 .plan-bd-row .bd-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--muted); }
 .plan-bd-row .bd-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--faint); }
 .plan-bd-row .bd-amount { flex: 0 0 auto; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -488,7 +499,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 /* ヒートマップ */
 .heatmap { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 13px); gap: 3.5px; overflow-x: auto; padding: 4px 2px; }
 .hm-cell { width: 13px; height: 13px; border-radius: 3.5px; background: var(--track); cursor: pointer; transition: transform .1s; }
-.hm-cell:hover { transform: scale(1.25); }
 .hm-1 { background: rgba(59,130,246,.28); }
 .hm-2 { background: rgba(59,130,246,.5); }
 .hm-3 { background: rgba(59,130,246,.75); }
@@ -523,7 +533,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer;
   transition: all .18s; padding: 0;
 }
-.mood-btn:hover { color: var(--ink); }
 .mood-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 /* ===== タブ ===== */
@@ -597,7 +606,7 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
   color: var(--ink); font: inherit; font-size: 14.5px; font-weight: 500; cursor: pointer;
   text-align: left; transition: background .15s;
 }
-.drawer-item:hover, .drawer-item:active { background: var(--surface-2); }
+.drawer-item:active { background: var(--surface-2); }
 .drawer-item .di-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); flex: 0 0 auto; }
 .drawer-item .di-label { flex: 1; }
 .drawer-item .di-chev { color: var(--faint); }
@@ -611,7 +620,6 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
   color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
   box-shadow: var(--shadow); transition: all .2s;
 }
-.menu-item:hover { border-color: var(--accent-line); transform: translateY(-2px); }
 .menu-item .ic { color: var(--accent); }
 
 /* ===== カレンダー ===== */
@@ -632,7 +640,6 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
   display: flex; flex-direction: column; align-items: flex-start; padding: 6px; cursor: pointer;
   position: relative; transition: border-color .15s, background .15s; min-width: 0;
 }
-.cal-cell:hover { border-color: var(--accent-line); }
 .cal-cell.other { opacity: .38; }
 .cal-cell.today { border-color: var(--accent); background: var(--accent-soft); }
 .cal-cell .cc-num { font-size: 12.5px; font-weight: 700; line-height: 1; }
@@ -681,7 +688,6 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
   font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .18s;
 }
 .act-btn .ic { color: var(--accent); }
-.act-btn:hover { border-color: var(--accent-line); background: var(--surface-2); }
 
 /* テーマ切替（設定） */
 .theme-toggle { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }

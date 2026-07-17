@@ -234,6 +234,7 @@ function openDrawer() {
   $("#drawerOverlay").addEventListener("click", closeDrawer);
   $("#drawerClose").addEventListener("click", closeDrawer);
   $$("#drawer .drawer-item").forEach((b) => b.addEventListener("click", () => { closeDrawer(); go(b.dataset.view); }));
+  attachSwipe($("#drawer"), (dir) => { if (dir === "right") closeDrawer(); }); // 右スワイプで閉じる
 }
 
 function closeDrawer() {
