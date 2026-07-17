@@ -200,6 +200,7 @@ function buildNav() {
     return `<button class="${cls}" data-view="${v}">${icon(ic, v === "home" ? 24 : 20)}<span>${esc(label)}</span></button>`;
   }).join("");
   $$(".nav-item").forEach((b) => b.addEventListener("click", () => {
+    playTapAnim(b);
     if (b.dataset.view === "menu") openDrawer();
     else go(b.dataset.view);
   }));
@@ -233,7 +234,7 @@ function openDrawer() {
   });
   $("#drawerOverlay").addEventListener("click", closeDrawer);
   $("#drawerClose").addEventListener("click", closeDrawer);
-  $$("#drawer .drawer-item").forEach((b) => b.addEventListener("click", () => { closeDrawer(); go(b.dataset.view); }));
+  $$("#drawer .drawer-item").forEach((b) => b.addEventListener("click", () => { playTapAnim(b); closeDrawer(); go(b.dataset.view); }));
   attachSwipe($("#drawer"), (dir) => { if (dir === "right") closeDrawer(); }); // 右スワイプで閉じる
 }
 
@@ -980,7 +981,7 @@ VIEWS.menu = {
       <div class="menu-grid">
         ${all.map((v) => `<button class="menu-item" data-go="${v}">${icon(VIEWS[v].icon, 22)}${esc(VIEWS[v].title)}</button>`).join("")}
       </div>`;
-    $$("[data-go]").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
+    $$("[data-go]").forEach((b) => b.addEventListener("click", () => { playTapAnim(b); go(b.dataset.go); }));
   },
 };
 

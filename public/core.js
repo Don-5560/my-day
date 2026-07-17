@@ -5,6 +5,12 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2));
+// ナビのタップ演出。clickが成立した瞬間だけ再生する（:activeだと指を置いた瞬間＝スクロール開始前に反応してしまうため使わない）
+function playTapAnim(el) {
+  el.classList.remove("nav-tap");
+  void el.offsetWidth; // 連打時に再生し直すためのreflow
+  el.classList.add("nav-tap");
+}
 
 async function api(url, opts) {
   const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opts });

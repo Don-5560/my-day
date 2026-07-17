@@ -97,6 +97,14 @@ body {
   .cal-cell:hover { border-color: var(--accent-line); }
   .act-btn:hover { border-color: var(--accent-line); background: var(--surface-2); }
 }
+/* ナビ（ドロワー/下ナビ/サイドバー/メニュー）のタップ演出。
+   :active だと指を置いた瞬間（スクロール開始前）に反応してしまうため使わず、
+   実際にタップ＝clickが成立した瞬間だけJSで .nav-tap を付けて再生する */
+@keyframes navTap {
+  0% { transform: scale(.94); background: var(--surface-2); }
+  100% { transform: scale(1); background: transparent; }
+}
+.nav-tap { animation: navTap .22s ease-out; }
 
 /* 上から引っ張って更新のインジケーター */
 #ptr {
@@ -186,12 +194,10 @@ body {
   display: flex; align-items: center; gap: 11px; width: 100%;
   padding: 9px 12px; border: none; background: none; border-radius: 11px;
   color: var(--muted); font: inherit; font-size: 13.5px; font-weight: 500;
-  cursor: pointer; transition: background .18s, color .18s, transform .12s;
+  cursor: pointer; transition: background .18s, color .18s;
   text-align: left;
 }
 .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-/* タップした瞬間に押し込むようなアニメーションを付ける（スクロール中の張り付いたホバーとは別物） */
-.nav-item:active { background: var(--surface-2); transform: scale(.97); }
 .nav-item .ic { flex: 0 0 auto; }
 
 .side-level { margin-top: auto; padding: 12px 10px 0; }
@@ -202,8 +208,6 @@ body {
   align-items: center; flex: 1; text-align: center; color: var(--faint);
 }
 .bottom-nav .nav-item.active { background: none; color: var(--accent); }
-.bottom-nav .nav-item:active { transform: scale(.93); }
-.bottom-nav .nav-item.center:active { background: none; } /* 丸いホームボタンの裏に四角いハイライトが出ないように */
 .bottom-nav .nav-item.center { color: var(--accent); gap: 0; }
 .bottom-nav .nav-item.center .ic {
   width: 52px; height: 52px; border-radius: 50%; margin-top: -26px;
@@ -615,10 +619,8 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
   display: flex; align-items: center; gap: 12px; width: 100%;
   padding: 12px 12px; border: none; background: none; border-radius: 12px;
   color: var(--ink); font: inherit; font-size: 14.5px; font-weight: 500; cursor: pointer;
-  text-align: left; transition: background .15s, transform .12s;
+  text-align: left; transition: background .15s;
 }
-/* タップした瞬間だけ動くアニメーション（スクロール中に指が触れただけでは張り付かない） */
-.drawer-item:active { background: var(--surface-2); transform: scale(.97); }
 .drawer-item .di-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); flex: 0 0 auto; }
 .drawer-item .di-label { flex: 1; }
 .drawer-item .di-chev { color: var(--faint); }
@@ -633,7 +635,6 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
   box-shadow: var(--shadow); transition: all .2s;
 }
 .menu-item .ic { color: var(--accent); }
-.menu-item:active { border-color: var(--accent-line); transform: scale(.96); }
 
 /* ===== カレンダー ===== */
 
