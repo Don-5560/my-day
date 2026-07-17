@@ -438,8 +438,8 @@ async function planItemModal(kind, initial) {
       });
     });
     document.body.classList.remove("modal-open");
-    if (result.__cancel) return null;
-    if (result.__delete) return { __delete: true };
+    if (result.__cancel) { wrap.innerHTML = ""; return null; }
+    if (result.__delete) { wrap.innerHTML = ""; return { __delete: true }; }
     if (result.__addBd) {
       const nv = await modal("内訳を追加", PLAN_BD_FIELDS());
       if (nv && nv.name && nv.amount) draft.breakdown.push({ id: uid(), name: nv.name, amount: Math.round(nv.amount), note: nv.note });
@@ -455,6 +455,7 @@ async function planItemModal(kind, initial) {
       continue;
     }
     if (!result.label || !result.amount) { toast("項目名と金額を入力してください", "x"); draft.label = result.label; draft.amount = result.amount; draft.from = result.from; draft.to = result.to; continue; }
+    wrap.innerHTML = "";
     return { label: result.label, amount: Math.round(result.amount), from: result.from, to: result.to, breakdown: draft.breakdown };
   }
 }
@@ -615,17 +616,6 @@ VIEWS.money = {
       toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
       rerender();
     };
-    // 予想収支電卓: 保存はせず、現在の残高に予想の収入/支出を足し引きして即座に表示するだけ
-    const fcRecalc = () => {
-      const inc = Number($("#fcIncome").value) || 0;
-      const exp = Number($("#fcExpense").value) || 0;
-      const result = fin.currentBalance + inc - exp;
-      const el = $("#fcResult");
-      el.textContent = signedYen(result);
-      el.style.color = result < 0 ? "var(--red)" : "var(--ink)";
-    };
-    $("#fcIncome").addEventListener("input", fcRecalc);
-    $("#fcExpense").addEventListener("input", fcRecalc);
     $("#addIncome").addEventListener("click", () => addTx("income", [...TX_INCOME_CATS, ...(DB.categories.income || [])]));
     $("#addExpense").addEventListener("click", () => addTx("expense", [...TX_EXPENSE_CATS, ...(DB.categories.expense || [])]));
     $("#setInit").addEventListener("click", async () => {
