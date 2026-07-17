@@ -363,31 +363,33 @@ let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 
 // 期間（開始日・終了日、どちらも任意）を「7/1〜9/30」のような短い表記にする
 const planPeriodLabel = (it) => (it.from || it.to ? `${it.from ? fmtShort(it.from) : "?"}〜${it.to ? fmtShort(it.to) : "?"}` : "");
-// 詳細は複数行OK。各行の末尾トークンを金額とみなし、左（名前）・右（金額）で列を揃えて描く
-const planDetailLineHTML = (line) => {
-  const m = line.match(/^(.*?)[ \t　]+([^\s　]+)$/);
-  const [name, price] = m ? [m[1], m[2]] : [line, ""];
-  return `<div class="plan-detail-line"><span>${esc(name)}</span><span>${esc(price)}</span></div>`;
-};
-const planDetailHTML = (it) => {
-  const lines = String(it.detail || "").split("\n").map((l) => l.trim()).filter(Boolean);
+// 内訳の1行: 名前・詳細（さらに小さく表示する補足メモ）・金額を横並びで列を揃える
+const planBdRowHTML = (bd, itemId, kind) => `<div class="plan-bd-row" data-bd-open="${bd.id}" data-item="${itemId}" data-kind="${kind}" role="button" tabindex="0">
+    <span class="bd-name">${esc(bd.name)}</span>
+    <span class="bd-note">${esc(bd.note || "")}</span>
+    <span class="bd-amount">${fmtYen(bd.amount)}</span>
+  </div>`;
+const planItemsHTML = (items, kind) => (items.length ? items.map((it) => {
   const period = planPeriodLabel(it);
-  if (period) lines.push(`期間　${period}`);
-  if (!lines.length) return "";
-  return `<div class="plan-detail-lines">${lines.map(planDetailLineHTML).join("")}</div>`;
-};
-const planItemsHTML = (items, kind) => (items.length ? items.map((it) => `<div class="plan-item" data-plan-open="${it.id}" data-kind="${kind}" role="button" tabindex="0">
+  return `<div class="plan-item" data-plan-open="${it.id}" data-kind="${kind}" role="button" tabindex="0">
     <div class="plan-item-head">
       <span class="row-title">${esc(it.label)}</span>
       <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
     </div>
-    ${planDetailHTML(it)}
-  </div>`).join("") : '<p class="empty">まだ項目がありません</p>');
+    ${(it.breakdown && it.breakdown.length) ? `<div class="plan-bd-list">${it.breakdown.map((bd) => planBdRowHTML(bd, it.id, kind)).join("")}</div>` : ""}
+    <button type="button" class="btn ghost sm" data-bd-add="${it.id}" data-kind="${kind}" style="margin-top:6px">${icon("plus", 12)} 内訳を追加</button>
+    ${period ? `<div class="plan-detail-line" style="margin-top:6px"><span>期間</span><span>${esc(period)}</span></div>` : ""}
+  </div>`;
+}).join("") : '<p class="empty">まだ項目がありません</p>');
 const PLAN_ITEM_FIELDS = (kind) => [
   { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）上海ディズニー" },
   { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
-  { key: "detail", label: "詳細（任意・1行に「名前 金額」）", type: "textarea", mono: true, placeholder: "飛行機 7万円\nホテル 5万円\nパーク 4万円\nその他 4万円" },
   { type: "daterange", label: "期間（任意）", startKey: "from", endKey: "to" },
+];
+const PLAN_BD_FIELDS = () => [
+  { key: "name", label: "項目名", type: "text", placeholder: "例）飛行機" },
+  { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
+  { key: "note", label: "詳細（任意・小さく表示）", type: "text", placeholder: "例）往復LCC" },
 ];
 
 VIEWS.money = {
@@ -410,7 +412,7 @@ VIEWS.money = {
 
     // 予想収支の1行目に「現在の残高」を自動で入れる（初回のみ。以後は自分で編集・削除できる）
     if (!DB.budgetplan.income.length) {
-      DB.budgetplan.income = [{ id: uid(), label: "現在の残高", amount: fin.currentBalance }];
+      DB.budgetplan.income = [{ id: uid(), label: "現在の残高", amount: fin.currentBalance, breakdown: [] }];
       await saveDb("budgetplan");
     }
 
@@ -487,7 +489,7 @@ VIEWS.money = {
       const kind = b.dataset.planAdd;
       const v = await modal(kind === "income" ? "予想収入の項目を追加" : "予想出費の項目を追加", PLAN_ITEM_FIELDS(kind));
       if (!v || !v.label || !v.amount) return;
-      DB.budgetplan[kind].push({ id: uid(), label: v.label, amount: Math.round(v.amount), detail: v.detail, from: v.from, to: v.to });
+      DB.budgetplan[kind].push({ id: uid(), label: v.label, amount: Math.round(v.amount), breakdown: [], from: v.from, to: v.to });
       await saveDb("budgetplan");
       rerender();
     }));
@@ -503,13 +505,47 @@ VIEWS.money = {
           DB.budgetplan[kind] = DB.budgetplan[kind].filter((i) => i.id !== it.id);
         } else {
           if (!v.label || !v.amount) return;
-          Object.assign(it, { label: v.label, amount: Math.round(v.amount), detail: v.detail, from: v.from, to: v.to });
+          Object.assign(it, { label: v.label, amount: Math.round(v.amount), from: v.from, to: v.to });
         }
         await saveDb("budgetplan");
         rerender();
       };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+    // 内訳を追加（項目タップに巻き込まれないよう伝播を止める）
+    $$("[data-bd-add]", main).forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const kind = b.dataset.kind;
+      const it = DB.budgetplan[kind].find((i) => i.id === b.dataset.bdAdd);
+      if (!it) return;
+      const v = await modal("内訳を追加", PLAN_BD_FIELDS());
+      if (!v || !v.name || !v.amount) return;
+      (it.breakdown ||= []).push({ id: uid(), name: v.name, amount: Math.round(v.amount), note: v.note });
+      await saveDb("budgetplan");
+      rerender();
+    }));
+    // 内訳をタップ→編集（削除はその中のボタンから）
+    $$("[data-bd-open]", main).forEach((el) => {
+      const open = async (e) => {
+        e.stopPropagation();
+        const kind = el.dataset.kind;
+        const it = DB.budgetplan[kind].find((i) => i.id === el.dataset.item);
+        const bd = it?.breakdown.find((b) => b.id === el.dataset.bdOpen);
+        if (!bd) return;
+        const v = await modal("内訳を編集", PLAN_BD_FIELDS(), bd, { onDelete: "この内訳を削除しますか？" });
+        if (!v) return;
+        if (v.__delete) {
+          it.breakdown = it.breakdown.filter((b) => b.id !== bd.id);
+        } else {
+          if (!v.name || !v.amount) return;
+          Object.assign(bd, { name: v.name, amount: Math.round(v.amount), note: v.note });
+        }
+        await saveDb("budgetplan");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(e); } });
     });
     if (MONEY_TAB !== "actual") return;
 
