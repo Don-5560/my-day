@@ -361,11 +361,17 @@ const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 
-const planItemsHTML = (items, kind) => (items.length ? items.map((it) => `<div class="row">
-    <div class="row-title small">${esc(it.label)}${it.memo ? `<div class="small" style="color:var(--faint);white-space:pre-wrap">${esc(it.memo)}</div>` : ""}</div>
+// 期間（開始日・終了日、どちらも任意）を「7/1〜9/30」のような短い表記にする
+const planPeriodLabel = (it) => (it.from || it.to ? `${it.from ? fmtShort(it.from) : "?"}〜${it.to ? fmtShort(it.to) : "?"}` : "");
+const planItemsHTML = (items, kind) => (items.length ? items.map((it) => {
+  const detail = [it.detail, planPeriodLabel(it)].filter(Boolean).join(" ・ ");
+  return `<div class="row plan-row">
+    <span class="row-title">${esc(it.label)}</span>
+    <span class="plan-detail small">${esc(detail)}</span>
     <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
     <button class="icon-btn danger row-del" data-plan-del="${it.id}" data-kind="${kind}">${icon("trash", 13)}</button>
-  </div>`).join("") : '<p class="empty">まだ項目がありません</p>');
+  </div>`;
+}).join("") : '<p class="empty">まだ項目がありません</p>');
 
 VIEWS.money = {
   title: "収支", icon: "wallet",
@@ -463,12 +469,13 @@ VIEWS.money = {
     $$("[data-plan-add]", main).forEach((b) => b.addEventListener("click", async () => {
       const kind = b.dataset.planAdd;
       const v = await modal(kind === "income" ? "予想収入の項目を追加" : "予想出費の項目を追加", [
-        { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）台湾旅行（3ヶ月）" },
+        { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）家賃" },
         { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
-        { key: "memo", label: "内訳など（任意）", type: "textarea", placeholder: "例）家賃6万×3ヶ月、食費5万×3ヶ月" },
+        { key: "detail", label: "詳細（任意）", type: "text", placeholder: "例）6万円×3ヶ月" },
+        { type: "daterange", label: "期間（任意）", startKey: "from", endKey: "to" },
       ]);
       if (!v || !v.label || !v.amount) return;
-      DB.budgetplan[kind].push({ id: uid(), label: v.label, amount: Math.round(v.amount), memo: v.memo });
+      DB.budgetplan[kind].push({ id: uid(), label: v.label, amount: Math.round(v.amount), detail: v.detail, from: v.from, to: v.to });
       await saveDb("budgetplan");
       rerender();
     }));

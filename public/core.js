@@ -194,6 +194,12 @@ function fieldHTML(f, val, allValues = {}) {
         <span class="f-sep">→</span>
         <input type="time" name="${f.endKey}" value="${esc(allValues[f.endKey] ?? f.endDefault ?? "")}" aria-label="終了">
       </div>`;
+    case "daterange": // 開始日→終了日を1行に。startKey/endKey で2つの値を持つ。どちらも空でよい（任意）
+      return label + `<div class="f-row2">
+        <input type="date" name="${f.startKey}" value="${esc(allValues[f.startKey] ?? f.startDefault ?? "")}" aria-label="開始日">
+        <span class="f-sep">→</span>
+        <input type="date" name="${f.endKey}" value="${esc(allValues[f.endKey] ?? f.endDefault ?? "")}" aria-label="終了日">
+      </div>`;
     default:
       return label + `<input type="${f.type === "url" ? "url" : "text"}" name="${f.key}" value="${esc(v)}" placeholder="${esc(f.placeholder || "")}">`;
   }
@@ -221,7 +227,7 @@ function modal(title, fields, values = {}) {
       const fd = new FormData(e.target);
       const out = {};
       for (const f of fields) {
-        if (f.type === "timerange") { // 2つの time 値を別々のキーで取り出す
+        if (f.type === "timerange" || f.type === "daterange") { // 2つの値（時刻/日付）を別々のキーで取り出す
           out[f.startKey] = String(fd.get(f.startKey) ?? "").trim();
           out[f.endKey] = String(fd.get(f.endKey) ?? "").trim();
           continue;
