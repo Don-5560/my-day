@@ -358,6 +358,7 @@ VIEWS.sales = {
 
 const TX_INCOME_CATS = ["Web制作", "Uber", "その他"];
 const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他"];
+const NEW_CAT_OPT = "＋ 新しいカテゴリーを追加";
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
 
 VIEWS.money = {
@@ -368,14 +369,15 @@ VIEWS.money = {
       <div class="page-head"><div><p class="eyebrow">Money</p><h1>お金</h1></div></div>
       <p class="empty">読み込み中…</p>`;
 
-    let fin, txs;
+    let fin, txs, catsDoc;
     try {
-      [fin, txs] = await Promise.all([api("/api/finance"), api("/api/transactions?month=" + mk)]);
+      [fin, txs, catsDoc] = await Promise.all([api("/api/finance"), api("/api/transactions?month=" + mk), api("/api/data/categories")]);
     } catch (e) {
       main.innerHTML = `<p class="empty">読み込みに失敗しました: ${esc(e.message)}</p>`;
       return;
     }
     DB.finance = fin;
+    catsDoc = catsDoc || {};
     if (CURRENT !== "money") return; // 取得中に他画面へ移動していたら描画しない
 
     const groupByCat = (list) => {
@@ -433,7 +435,21 @@ VIEWS.money = {
         { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
       ];
       const v = await modal(type === "income" ? "収入を追加" : "支出を追加", fields);
-      if (!v || !v.amount) return;
+      if (!v) return;
+      if (v.category === NEW_CAT_OPT) {
+        // 「＋ 新しいカテゴリーを追加」が選ばれたら名前を聞いて保存し、追加後の一覧で入力し直してもらう
+        const nv = await modal("新しいカテゴリーを追加", [
+          { key: "name", label: "カテゴリー名", type: "text", placeholder: "例）交通費" },
+        ]);
+        if (!nv || !nv.name) return;
+        catsDoc = { ...catsDoc, expense: [...(catsDoc.expense || []), nv.name] };
+        try {
+          await api("/api/data/categories", { method: "PUT", body: JSON.stringify(catsDoc) });
+        } catch (e) { toast(e.message, "x"); return; }
+        toast("カテゴリーを追加しました");
+        return addTx(type, [...TX_EXPENSE_CATS, ...catsDoc.expense, NEW_CAT_OPT]);
+      }
+      if (!v.amount) return;
       try {
         if (type === "income") {
           // 収入(売上)＋任意の経費を記録。残高に反映＆売上明細にミラー、利益も計算できる。
@@ -453,7 +469,7 @@ VIEWS.money = {
       rerender();
     };
     $("#addIncome").addEventListener("click", () => addTx("income", TX_INCOME_CATS));
-    $("#addExpense").addEventListener("click", () => addTx("expense", TX_EXPENSE_CATS));
+    $("#addExpense").addEventListener("click", () => addTx("expense", [...TX_EXPENSE_CATS, ...(catsDoc.expense || []), NEW_CAT_OPT]));
     $("#setInit").addEventListener("click", async () => {
       const v = await modal("初期残高を設定", [
         { key: "amount", label: "初期残高（円）", type: "money", default: fin.initialBalance, placeholder: "100000" },
