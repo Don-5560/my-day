@@ -232,7 +232,8 @@ function modal(title, fields, values = {}) {
       }
       close(out);
     });
-    const first = wrap.querySelector("input, select, textarea");
+    // date/timeは自動フォーカスするとiOSでピッカーが即開いてしまうため対象から外す
+    const first = wrap.querySelector("input:not([type=date]):not([type=time]), select, textarea");
     if (first) first.focus();
   });
 }
