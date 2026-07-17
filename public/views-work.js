@@ -419,20 +419,36 @@ VIEWS.money = {
       </div>`;
 
     const addTx = async (type, cats) => {
-      const v = await modal(type === "income" ? "収入を追加" : "支出を追加", [
+      // 収入は売上ページと同じ項目（金額・経費・収入源・メモ）に揃える
+      const fields = type === "income" ? [
+        { key: "date", label: "日付", type: "date", default: todayStr() },
+        { key: "amount", label: "収入金額（円）", type: "money", placeholder: "50000" },
+        { key: "cost", label: "経費（任意・円）", type: "money", placeholder: "0" },
+        { key: "category", label: "収入源", type: "select", options: cats },
+        { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
+      ] : [
         { key: "date", label: "日付", type: "date", default: todayStr() },
         { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
         { key: "category", label: "カテゴリ", type: "select", options: cats },
         { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
-      ]);
+      ];
+      const v = await modal(type === "income" ? "収入を追加" : "支出を追加", fields);
       if (!v || !v.amount) return;
       try {
-        await api("/api/transactions", {
-          method: "POST",
-          body: JSON.stringify({ type, amount: Math.round(v.amount), category: v.category, date: v.date || todayStr(), memo: v.memo }),
-        });
+        if (type === "income") {
+          // 収入(売上)＋任意の経費を記録。残高に反映＆売上明細にミラー、利益も計算できる。
+          await api("/api/sales", {
+            method: "POST",
+            body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.category, date: v.date || todayStr(), memo: v.memo }),
+          });
+          await refreshSales(); // 売上明細にもミラーされるので反映
+        } else {
+          await api("/api/transactions", {
+            method: "POST",
+            body: JSON.stringify({ type, amount: Math.round(v.amount), category: v.category, date: v.date || todayStr(), memo: v.memo }),
+          });
+        }
       } catch (e) { toast(e.message, "x"); return; }
-      if (type === "income") await refreshSales(); // 収入は売上明細にもミラーされるので反映
       toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
       rerender();
     };
