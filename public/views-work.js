@@ -363,18 +363,30 @@ let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 
 // 期間（開始日・終了日、どちらも任意）を「7/1〜9/30」のような短い表記にする
 const planPeriodLabel = (it) => (it.from || it.to ? `${it.from ? fmtShort(it.from) : "?"}〜${it.to ? fmtShort(it.to) : "?"}` : "");
-const planItemsHTML = (items, kind) => (items.length ? items.map((it) => {
-  const detail = [it.detail, planPeriodLabel(it)].filter(Boolean).join(" ・ ");
-  return `<div class="row plan-row" data-plan-open="${it.id}" data-kind="${kind}" role="button" tabindex="0" style="cursor:pointer">
-    <span class="row-title">${esc(it.label)}</span>
-    <span class="plan-detail small">${esc(detail)}</span>
-    <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
-  </div>`;
-}).join("") : '<p class="empty">まだ項目がありません</p>');
+// 詳細は複数行OK。各行の末尾トークンを金額とみなし、左（名前）・右（金額）で列を揃えて描く
+const planDetailLineHTML = (line) => {
+  const m = line.match(/^(.*?)[ \t　]+([^\s　]+)$/);
+  const [name, price] = m ? [m[1], m[2]] : [line, ""];
+  return `<div class="plan-detail-line"><span>${esc(name)}</span><span>${esc(price)}</span></div>`;
+};
+const planDetailHTML = (it) => {
+  const lines = String(it.detail || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const period = planPeriodLabel(it);
+  if (period) lines.push(`期間　${period}`);
+  if (!lines.length) return "";
+  return `<div class="plan-detail-lines">${lines.map(planDetailLineHTML).join("")}</div>`;
+};
+const planItemsHTML = (items, kind) => (items.length ? items.map((it) => `<div class="plan-item" data-plan-open="${it.id}" data-kind="${kind}" role="button" tabindex="0">
+    <div class="plan-item-head">
+      <span class="row-title">${esc(it.label)}</span>
+      <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
+    </div>
+    ${planDetailHTML(it)}
+  </div>`).join("") : '<p class="empty">まだ項目がありません</p>');
 const PLAN_ITEM_FIELDS = (kind) => [
-  { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）家賃" },
+  { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）上海ディズニー" },
   { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
-  { key: "detail", label: "詳細（任意）", type: "text", placeholder: "例）6万円×3ヶ月" },
+  { key: "detail", label: "詳細（任意・1行に「名前 金額」）", type: "textarea", placeholder: "飛行機 7万円\nホテル 5万円\nパーク 4万円\nその他 4万円" },
   { type: "daterange", label: "期間（任意）", startKey: "from", endKey: "to" },
 ];
 
