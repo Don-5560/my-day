@@ -369,17 +369,26 @@ const planBdRowHTML = (bd) => `<div class="plan-bd-row">
     <span class="bd-note">${esc(bd.note || "")}</span>
     <span class="bd-amount">${fmtYen(bd.amount)}</span>
   </div>`;
-const planItemsHTML = (items, kind) => (items.length ? items.map((it) => {
+const planItemsHTML = (items, blockId, type) => (items.length ? items.map((it) => {
   const period = planPeriodLabel(it);
-  return `<div class="plan-item" data-plan-open="${it.id}" data-kind="${kind}" role="button" tabindex="0">
+  return `<div class="plan-item" data-plan-open="${it.id}" data-block="${blockId}" role="button" tabindex="0">
     <div class="plan-item-head">
       <span class="row-title">${esc(it.label)}</span>
-      <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
+      <strong style="color:${type === "income" ? "var(--green)" : "var(--red)"}">${type === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
     </div>
     ${(it.breakdown && it.breakdown.length) ? `<div class="plan-bd-list">${it.breakdown.map(planBdRowHTML).join("")}</div>` : ""}
     ${period ? `<div class="plan-detail-line" style="margin-top:6px"><span>期間</span><span>${esc(period)}</span></div>` : ""}
   </div>`;
 }).join("") : '<p class="empty">まだ項目がありません</p>');
+// ブロック（収入/支出/残高チェックポイント）の名前を追加・編集・削除するモーダル
+async function planBlockModal(type, initial) {
+  const isEdit = !!initial.id;
+  const title = isEdit ? "ブロック名を編集" : (type === "income" ? "予想収入ブロックを追加" : type === "expense" ? "予想出費ブロックを追加" : "残高チェックポイントを追加");
+  const defaultTitle = type === "income" ? "予想収入" : type === "expense" ? "予想出費" : "予想残高";
+  return modal(title, [
+    { key: "title", label: "ブロック名（任意）", type: "text", placeholder: defaultTitle },
+  ], { title: initial.title || "" }, isEdit ? { onDelete: "このブロックを削除しますか？（中の項目もすべて削除されます）" } : {});
+}
 const PLAN_BD_FIELDS = () => [
   { key: "name", label: "項目名", type: "text", placeholder: "例）飛行機" },
   { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
@@ -478,9 +487,14 @@ VIEWS.money = {
     DB.finance = fin;
     if (CURRENT !== "money") return; // 取得中に他画面へ移動していたら描画しない
 
-    // 予想収支の1行目に「現在の残高」を自動で入れる（初回のみ。以後は自分で編集・削除できる）
-    if (!DB.budgetplan.income.length) {
-      DB.budgetplan.income = [{ id: uid(), label: "現在の残高", amount: fin.currentBalance, breakdown: [] }];
+    // 旧形式（income/expenseの固定2リスト）から新形式（ブロックの並び）へ一度だけ移行する
+    if (!DB.budgetplan.blocks) {
+      const blocks = [];
+      if (DB.budgetplan.income?.filter((i) => i.label !== "現在の残高").length) {
+        blocks.push({ id: uid(), type: "income", title: "", items: DB.budgetplan.income.filter((i) => i.label !== "現在の残高") });
+      }
+      if (DB.budgetplan.expense?.length) blocks.push({ id: uid(), type: "expense", title: "", items: DB.budgetplan.expense });
+      DB.budgetplan = { blocks };
       await saveDb("budgetplan");
     }
 
@@ -491,9 +505,25 @@ VIEWS.money = {
     };
     const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
     const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
-    const planIncTotal = DB.budgetplan.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const planExpTotal = DB.budgetplan.expense.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const planResult = planIncTotal - planExpTotal;
+
+    // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
+    let running = fin.currentBalance;
+    const blocksHtml = DB.budgetplan.blocks.map((b) => {
+      if (b.type === "balance") {
+        return `<div class="card plan-balance-card" data-block-open="${b.id}" role="button" tabindex="0" style="margin-top:14px;cursor:pointer">
+          <h2>${icon("chart", 15)} ${esc(b.title || "予想残高")}</h2>
+          <p style="margin:4px 0 0;font-size:26px;font-weight:800;color:${running < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(running)}</p>
+        </div>`;
+      }
+      const total = b.items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+      running += b.type === "income" ? total : -total;
+      return `<div class="card" style="margin-top:14px">
+        <h2 data-block-open="${b.id}" role="button" tabindex="0" style="cursor:pointer">${icon("layers", 15)} ${esc(b.title || (b.type === "income" ? "予想収入" : "予想出費"))}</h2>
+        ${planItemsHTML(b.items, b.id, b.type)}
+        <button class="btn ghost sm" data-item-add="${b.id}" data-kind="${b.type}" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
+        <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(total)}</strong></p>
+      </div>`;
+    }).join("");
 
     main.innerHTML = `
       <div class="page-head">
@@ -531,46 +561,66 @@ VIEWS.money = {
           </div>`;
         }).join("") || '<p class="empty">今月の取引はまだありません</p>'}
       </div>` : `
-      <p class="small" style="color:var(--muted);margin:-8px 0 16px">項目を自由に追加して、予想の収支と最終的な残高を計算します。内容は保存され、あとから見返せます。</p>
-      <div class="grid2">
-        <div class="card" style="margin-bottom:0">
-          <h2>${icon("layers", 15)} 予想収入</h2>
-          ${planItemsHTML(DB.budgetplan.income, "income")}
-          <button class="btn ghost sm" data-plan-add="income" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
-          <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(planIncTotal)}</strong></p>
-        </div>
-        <div class="card" style="margin-bottom:0">
-          <h2>${icon("layers", 15)} 予想出費</h2>
-          ${planItemsHTML(DB.budgetplan.expense, "expense")}
-          <button class="btn ghost sm" data-plan-add="expense" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
-          <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(planExpTotal)}</strong></p>
-        </div>
+      <p class="small" style="color:var(--muted);margin:-8px 0 16px">ブロックを自由に追加して、時系列で予想の収支を組み立てられます。内容は保存され、あとから見返せます。</p>
+      <div class="card" style="margin-bottom:0">
+        <h2>${icon("wallet", 15)} 現在の残高</h2>
+        <p style="margin:4px 0 0;font-size:26px;font-weight:800">${signedYen(fin.currentBalance)}</p>
       </div>
-      <div class="card" style="margin-top:18px">
-        <h2>${icon("chart", 15)} 予想残高</h2>
-        <p class="small" style="color:var(--muted);margin:0 0 6px">${fmtYen(planIncTotal)} − ${fmtYen(planExpTotal)}</p>
-        <p style="margin:0;font-size:28px;font-weight:800;color:${planResult < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(planResult)}</p>
+      ${blocksHtml}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn ghost sm" data-block-add="income">${icon("plus", 13)} 収入ブロック</button>
+        <button class="btn ghost sm" data-block-add="expense">${icon("plus", 13)} 支出ブロック</button>
+        <button class="btn ghost sm" data-block-add="balance">${icon("plus", 13)} 残高チェックポイント</button>
       </div>`}`;
 
     $$("[data-mtab]", main).forEach((b) => b.addEventListener("click", () => { MONEY_TAB = b.dataset.mtab; rerender(); }));
-    $$("[data-plan-add]", main).forEach((b) => b.addEventListener("click", async () => {
-      const kind = b.dataset.planAdd;
-      const v = await planItemModal(kind, {});
+    // ブロックを追加
+    $$("[data-block-add]", main).forEach((b) => b.addEventListener("click", async () => {
+      const type = b.dataset.blockAdd;
+      const v = await planBlockModal(type, {});
+      if (!v) return;
+      DB.budgetplan.blocks.push({ id: uid(), type, title: v.title, ...(type === "balance" ? {} : { items: [] }) });
+      await saveDb("budgetplan");
+      rerender();
+    }));
+    // ブロック名をタップ→編集・削除
+    $$("[data-block-open]", main).forEach((el) => {
+      const open = async () => {
+        const b = DB.budgetplan.blocks.find((x) => x.id === el.dataset.blockOpen);
+        if (!b) return;
+        const v = await planBlockModal(b.type, b);
+        if (!v) return;
+        if (v.__delete) {
+          DB.budgetplan.blocks = DB.budgetplan.blocks.filter((x) => x.id !== b.id);
+        } else {
+          b.title = v.title;
+        }
+        await saveDb("budgetplan");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+    // ブロック内に項目を追加
+    $$("[data-item-add]", main).forEach((b) => b.addEventListener("click", async () => {
+      const block = DB.budgetplan.blocks.find((x) => x.id === b.dataset.itemAdd);
+      if (!block) return;
+      const v = await planItemModal(b.dataset.kind, {});
       if (!v || v.__delete) return;
-      DB.budgetplan[kind].push({ id: uid(), ...v });
+      block.items.push({ id: uid(), ...v });
       await saveDb("budgetplan");
       rerender();
     }));
     // 項目をタップ→編集（内訳の追加/編集/削除もこのモーダルの中で完結する）
     $$("[data-plan-open]", main).forEach((el) => {
       const open = async () => {
-        const kind = el.dataset.kind;
-        const it = DB.budgetplan[kind].find((i) => i.id === el.dataset.planOpen);
+        const block = DB.budgetplan.blocks.find((x) => x.id === el.dataset.block);
+        const it = block?.items.find((i) => i.id === el.dataset.planOpen);
         if (!it) return;
-        const v = await planItemModal(kind, it);
+        const v = await planItemModal(block.type, it);
         if (!v) return;
         if (v.__delete) {
-          DB.budgetplan[kind] = DB.budgetplan[kind].filter((i) => i.id !== it.id);
+          block.items = block.items.filter((i) => i.id !== it.id);
         } else {
           Object.assign(it, v);
         }
