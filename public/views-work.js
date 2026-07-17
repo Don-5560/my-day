@@ -1205,9 +1205,83 @@ function calShowDetail(iso) {
 
 // ===== 設定 =====
 
+const WD_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const WD_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+const tplDaysLabel = (days) => (!days || days === "daily" ? "毎日" : days.map((d) => WD_SHORT[WD_KEYS.indexOf(d)]).join("・"));
+const templateListHTML = (recurring) => (recurring.length ? recurring.map((t, i) => `<div class="row" data-tpl-open="${i}" role="button" tabindex="0" style="cursor:pointer">
+    <span class="row-title">${esc(t.title)}</span>
+    <span class="small" style="color:var(--muted)">${t.time ? esc(t.time) + " ・ " : ""}${tplDaysLabel(t.days)}</span>
+  </div>`).join("") : '<p class="empty">まだ定番タスクがありません</p>');
+// 定番タスクの追加・編集モーダル。曜日はチップのトグル、時刻は任意
+async function templateModal(initial = {}) {
+  const isEdit = initial.title !== undefined;
+  const draft = { title: initial.title || "", time: initial.time || "", days: (!initial.days || initial.days === "daily") ? "daily" : [...initial.days] };
+  for (;;) {
+    const wrap = $("#modalWrap");
+    const isDaily = draft.days === "daily";
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head"><h3>${esc(isEdit ? "定番タスクを編集" : "定番タスクを追加")}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <form id="tform">
+        <label class="f-label">タスク名</label>
+        <input type="text" name="title" value="${esc(draft.title)}" placeholder="例）水を2L飲む">
+        <label class="f-label">時刻（任意）</label>
+        <input type="time" name="time" value="${esc(draft.time)}">
+        <label class="f-label">曜日</label>
+        <div class="wd-picker">
+          <button type="button" class="wd-chip ${isDaily ? "active" : ""}" data-wd="daily">毎日</button>
+          ${WD_SHORT.map((label, i) => `<button type="button" class="wd-chip ${!isDaily && draft.days.includes(WD_KEYS[i]) ? "active" : ""}" data-wd="${WD_KEYS[i]}">${label}</button>`).join("")}
+        </div>
+        <div class="modal-foot">
+          ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
+          <button type="button" class="btn ghost" data-x>キャンセル</button>
+          <button type="submit" class="btn">${icon("checkline", 15)} 保存</button>
+        </div>
+      </form>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+    const captureDraft = () => {
+      draft.title = wrap.querySelector('input[name=title]').value;
+      draft.time = wrap.querySelector('input[name=time]').value;
+    };
+    const result = await new Promise((resolve) => {
+      wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) resolve({ __cancel: true }); });
+      $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => resolve({ __cancel: true })));
+      if (isEdit) wrap.querySelector("[data-del]").addEventListener("click", async () => {
+        if (await confirmBox("この定番タスクを削除しますか？")) resolve({ __delete: true });
+      });
+      $$("[data-wd]", wrap).forEach((b) => b.addEventListener("click", () => {
+        captureDraft();
+        const wd = b.dataset.wd;
+        if (wd === "daily") { draft.days = "daily"; } else {
+          if (draft.days === "daily") draft.days = [];
+          const idx = draft.days.indexOf(wd);
+          if (idx >= 0) draft.days.splice(idx, 1); else draft.days.push(wd);
+          if (!draft.days.length) draft.days = "daily";
+        }
+        resolve({ __toggleWd: true });
+      }));
+      wrap.querySelector("#tform").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        resolve({ title: String(fd.get("title") || "").trim(), time: String(fd.get("time") || "").trim() });
+      });
+    });
+    document.body.classList.remove("modal-open");
+    if (result.__cancel) { wrap.innerHTML = ""; return null; }
+    if (result.__delete) { wrap.innerHTML = ""; return { __delete: true }; }
+    if (result.__toggleWd) continue;
+    if (!result.title) { toast("タスク名を入力してください", "x"); draft.title = result.title; draft.time = result.time; continue; }
+    wrap.innerHTML = "";
+    return { title: result.title, time: result.time, days: draft.days };
+  }
+}
+
 VIEWS.settings = {
   title: "設定", icon: "settings",
-  render(main) {
+  async render(main) {
+    let tplDoc;
+    try { tplDoc = await api("/api/templates"); } catch (e) { tplDoc = { recurring: [] }; }
+    const recurring = tplDoc.recurring || [];
     main.innerHTML = `
       <div class="page-head"><div><p class="eyebrow">Settings</p><h1>設定</h1></div></div>
 
@@ -1236,9 +1310,8 @@ VIEWS.settings = {
 
       <div class="card">
         <h2>${icon("check", 15)} 毎日の定番タスク</h2>
-        <p class="hint">1行に1つ。<code>タスク名</code> だけなら毎日。曜日指定は <code>タスク名 @mon,wed,fri</code></p>
-        <textarea id="sTpl"></textarea>
-        <div style="margin-top:12px"><button class="btn ghost" id="saveTpl">${icon("checkline", 14)} 定番タスクを保存</button></div>
+        <div id="tplList">${templateListHTML(recurring)}</div>
+        <button class="btn ghost sm" id="tplAdd" style="margin-top:10px">${icon("plus", 13)} 定番タスクを追加</button>
       </div>
 
       <div class="card">
@@ -1254,12 +1327,6 @@ VIEWS.settings = {
         <h2>${icon("logout", 15)} アカウント</h2>
         <button class="btn danger" id="logout">${icon("logout", 14)} ログアウト</button>
       </div>`;
-
-    // 定番タスク読み込み
-    api("/api/templates").then((tpl) => {
-      $("#sTpl").value = (tpl.recurring || [])
-        .map((t) => (t.days && t.days !== "daily" ? `${t.title} @${t.days.join(",")}` : t.title)).join("\n");
-    });
 
     // テーマ切替（即時反映＋端末に記憶）
     $("#themeToggle").addEventListener("click", (e) => {
@@ -1282,16 +1349,28 @@ VIEWS.settings = {
       toast("設定を保存しました");
     });
 
-    $("#saveTpl").addEventListener("click", async () => {
-      const recurring = [];
-      for (const raw of $("#sTpl").value.split("\n")) {
-        const line = raw.trim(); if (!line) continue;
-        const m = line.match(/^(.*?)\s*@([a-z,]+)$/i);
-        if (m) recurring.push({ title: m[1].trim(), days: m[2].toLowerCase().split(",").filter(Boolean) });
-        else recurring.push({ title: line, days: "daily" });
-      }
+    $("#tplAdd").addEventListener("click", async () => {
+      const v = await templateModal();
+      if (!v) return;
+      recurring.push({ title: v.title, time: v.time, days: v.days });
       await api("/api/templates", { method: "PUT", body: JSON.stringify({ recurring }) });
-      toast("定番タスクを保存しました");
+      toast("定番タスクを追加しました");
+      rerender();
+    });
+    $$("[data-tpl-open]", main).forEach((el) => {
+      const open = async () => {
+        const t = recurring[Number(el.dataset.tplOpen)];
+        if (!t) return;
+        const v = await templateModal(t);
+        if (!v) return;
+        if (v.__delete) recurring.splice(Number(el.dataset.tplOpen), 1);
+        else Object.assign(t, { title: v.title, time: v.time, days: v.days });
+        await api("/api/templates", { method: "PUT", body: JSON.stringify({ recurring }) });
+        toast(v.__delete ? "定番タスクを削除しました" : "定番タスクを保存しました");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
     });
 
     $("#exportJson").addEventListener("click", async () => {

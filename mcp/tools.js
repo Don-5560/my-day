@@ -231,7 +231,7 @@ export const TOOLS = [
   },
   {
     name: "set_templates",
-    description: "定番タスクを設定する。recurring配列: {title, days}。daysは 'daily' か曜日配列(['mon','wed'])。",
+    description: "定番タスクを設定する。recurring配列: {title, days, time}。daysは 'daily' か曜日配列(['mon','wed'])。timeは任意の開始時刻 'HH:MM'。",
     inputSchema: {
       type: "object",
       properties: {
@@ -239,7 +239,7 @@ export const TOOLS = [
           type: "array",
           items: {
             type: "object",
-            properties: { title: { type: "string" }, days: {} },
+            properties: { title: { type: "string" }, days: {}, time: { type: "string" } },
             required: ["title"],
           },
         },

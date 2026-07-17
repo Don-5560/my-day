@@ -348,6 +348,13 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .f-row2 { display: flex; align-items: center; gap: 8px; }
 .f-row2 input { flex: 1; min-width: 0; }
 .f-sep { color: var(--faint); flex: 0 0 auto; font-size: 13px; }
+/* 定番タスク: 曜日選択チップ */
+.wd-picker { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.wd-chip {
+  padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.wd-chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 
 /* タスク詳細モーダルの情報表示 */
 .td-info { margin-top: 6px; }
