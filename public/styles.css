@@ -291,7 +291,10 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .li-right { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 
 /* ===== 今日の予定（時間割ふう） ===== */
-.sched { display: flex; flex-direction: column; }
+.sched-head { display: flex; align-items: center; gap: 6px; }
+.sched-title { flex: 1; text-align: center; margin: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.sched-back { text-align: center; margin: 2px 0 6px; }
+.sched { display: flex; flex-direction: column; min-height: 48px; touch-action: pan-y; }
 .sched-item {
   display: flex; align-items: center; gap: 11px; padding: 10px 4px;
   border-bottom: 1px solid var(--line); --cat: var(--line);

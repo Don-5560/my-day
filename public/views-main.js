@@ -31,6 +31,58 @@ const planMin = (t) => {
 };
 const PRIS = ["高", "中", "低"];
 
+// ホームの「予定」カードで表示中の日付（null=今日）。左右スワイプ/矢印で前後の日へ。
+let SCHED_DATE = null;
+const SCHED_CACHE = {}; // 今日以外の日データのキャッシュ（date -> day）
+
+// 日付(YYYY-MM-DD)に n 日足す
+function addDays(date, n) {
+  const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// 予定カードの日付見出し（今日以外）。明日/昨日は相対でも示す。
+function schedDayLabel(date) {
+  const diff = Math.round((new Date(date + "T00:00:00") - new Date(todayStr() + "T00:00:00")) / 86400000);
+  const rel = diff === 1 ? "明日 · " : diff === -1 ? "昨日 · " : "";
+  return rel + fmtJP(date);
+}
+// 横スワイプ検出。左=過去/右=未来を cb("left"|"right") で通知（左右方向が明確なときだけ）。
+function attachSwipe(el, cb) {
+  let x0 = null, y0 = null;
+  el.addEventListener("touchstart", (e) => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (x0 == null) return;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) cb(dx > 0 ? "right" : "left");
+  }, { passive: true });
+}
+// 予定カード1行のHTML。タイマーボタンは今日のみ表示。
+function schedItemHTML(t, isToday) {
+  const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "var(--line)";
+  const pm = planMin(t);
+  const badges = [
+    t.cat ? `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>` : "",
+    t.source === "template" ? '<span class="pill">定番</span>' : t.source === "ai" ? '<span class="pill acc">AI</span>' : "",
+    ...(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`),
+    t.spentMin ? `<span class="pill grn">${icon("timer", 10)} 実績 ${fmtHM(t.spentMin)}</span>` : "",
+  ].join("");
+  return `<div class="sched-item ${t.done ? "done" : ""}" data-row="${t.id}" style="--cat:${catCol}">
+    <div class="sched-time">
+      <span class="st-start ${t.time ? "" : "none"}">${t.time ? esc(t.time) : "—"}</span>
+      ${t.endTime ? `<span class="st-end">${esc(t.endTime)}</span>` : ""}
+      ${pm ? `<span class="st-dur">${fmtHM(pm)}</span>` : ""}
+    </div>
+    <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
+    <div class="li-body" data-open="${t.id}" role="button" tabindex="0">
+      <div class="li-title">${esc(t.title)}</div>
+      ${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
+      ${badges ? `<div class="li-tags">${badges}</div>` : ""}
+    </div>
+    ${isToday ? `<div class="li-right"><button class="icon-btn" data-play="${t.id}" aria-label="タイマー">${icon("timer", 15)}</button></div>` : ""}
+  </div>`;
+}
+
 // タスクの詳細（情報を表示し、右上に編集・下に削除）。返り値: "edit" | "delete" | "toggle" | null
 // ホームの予定・カレンダーの日別詳細の両方から使う共通モーダル。
 function taskDetailModal(t, opts = {}) {
@@ -218,7 +270,8 @@ VIEWS.home = {
   title: "ホーム", icon: "home",
   render(main) {
     const S = DB.settings;
-    const tasks = [...DB.day.tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+    SCHED_DATE = todayStr();                       // ホームは常に今日から表示
+    for (const k in SCHED_CACHE) delete SCHED_CACHE[k];
     const done = DB.day.tasks.filter((t) => t.done).length;
     const total = DB.day.tasks.length;
     const dayPct = total ? Math.round((done / total) * 100) : 0;
@@ -246,36 +299,7 @@ VIEWS.home = {
         <button class="btn ghost sm" id="addTask">${icon("plus", 14)} 追加</button>
       </div>
 
-      <div class="card">
-        <div class="card-head"><h2>${icon("calendar", 15)} 今日の予定</h2></div>
-        <div id="schedule" class="sched">${tasks.map((t) => {
-          const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "var(--line)";
-          const pm = planMin(t);
-          const badges = [
-            t.cat ? `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>` : "",
-            t.source === "template" ? '<span class="pill">定番</span>' : t.source === "ai" ? '<span class="pill acc">AI</span>' : "",
-            ...(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`),
-            t.spentMin ? `<span class="pill grn">${icon("timer", 10)} 実績 ${fmtHM(t.spentMin)}</span>` : "",
-          ].join("");
-          return `<div class="sched-item ${t.done ? "done" : ""}" data-row="${t.id}" style="--cat:${catCol}">
-            <div class="sched-time">
-              <span class="st-start ${t.time ? "" : "none"}">${t.time ? esc(t.time) : "—"}</span>
-              ${t.endTime ? `<span class="st-end">${esc(t.endTime)}</span>` : ""}
-              ${pm ? `<span class="st-dur">${fmtHM(pm)}</span>` : ""}
-            </div>
-            <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
-            <div class="li-body" data-open="${t.id}" role="button" tabindex="0">
-              <div class="li-title">${esc(t.title)}</div>
-              ${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
-              ${badges ? `<div class="li-tags">${badges}</div>` : ""}
-            </div>
-            <div class="li-right">
-              <button class="icon-btn" data-play="${t.id}" aria-label="タイマー">${icon("timer", 15)}</button>
-            </div>
-          </div>`;
-        }).join("") || '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>'}
-        </div>
-      </div>
+      <div class="card" id="schedCard"><!-- 予定は mountSchedule() が日付ごとに描画 --></div>
 
       <div class="home-stats">
         ${homeStat("勉強時間 (今日)", studyToday ? fmtHM(studyToday) : "0m", "目標: " + fmtHM(S.dailyStudyGoalMin || 360), "timer")}
@@ -298,7 +322,7 @@ VIEWS.home = {
         }).join("") || '<p class="empty">まだ活動がありません。タスクを完了するとここに出ます。</p>'}
       </div>`;
 
-    // 今日のタスクの進捗表示をその場で更新（再描画しない）
+    // 上部「今日のタスク」サマリーの数値を更新（常に今日基準）
     const refreshSummary = () => {
       const d = DB.day.tasks.filter((t) => t.done).length, tt = DB.day.tasks.length;
       const c = $("#tsCount"), tot = $("#tsTotal"), bar = $("#tsBar");
@@ -307,9 +331,20 @@ VIEWS.home = {
       if (bar) bar.style.width = (tt ? Math.round((d / tt) * 100) : 0) + "%";
     };
 
+    // 指定日のデータを取り直して予定カードを再描画
+    const reloadSchedDay = async (date) => {
+      try {
+        if (date === todayStr()) DB.day = await api("/api/day");
+        else SCHED_CACHE[date] = await api("/api/day?date=" + date);
+      } catch (err) { toast(err.message, "x"); }
+      await mountSchedule();
+      refreshSummary();
+    };
+
     // 完了時に実績時間（何時間やったか）を任意入力してもらう
-    const askSpentTime = async (taskId) => {
-      const t = DB.day.tasks.find((x) => x.id === taskId);
+    const askSpentTime = async (date, taskId) => {
+      const day = date === todayStr() ? DB.day : SCHED_CACHE[date];
+      const t = day && day.tasks.find((x) => x.id === taskId);
       if (!t) return;
       const cur = t.spentMin || planMin(t) || 0; // 既存の実績、無ければ予定の所要を初期値に
       const v = await modal("実績時間を記録（任意）", [
@@ -319,89 +354,125 @@ VIEWS.home = {
       if (!v) return; // キャンセル＝スキップ（完了はそのまま）
       const total = Math.max(0, (Number(v.h) || 0) * 60 + (Number(v.m) || 0));
       if (total === (t.spentMin || 0)) return;
-      try {
-        DB.day = await api("/api/tasks/" + taskId, { method: "PATCH", body: JSON.stringify({ spentMin: total }) });
-      } catch (err) { toast(err.message, "x"); return; }
-      rerender();
+      try { await api("/api/tasks/" + taskId, { method: "PATCH", body: JSON.stringify({ date, spentMin: total }) }); }
+      catch (err) { toast(err.message, "x"); return; }
+      await reloadSchedDay(date);
     };
 
-    // チェック: その場でトグル。完了にした時は実績時間の入力をうながす。
-    $$("#schedule [data-task]").forEach((cb) => cb.addEventListener("change", async () => {
-      const row = cb.closest(".sched-item");
-      row.classList.toggle("done", cb.checked);
-      try {
-        DB.day = await api("/api/tasks/" + cb.dataset.task, { method: "PATCH", body: JSON.stringify({ done: cb.checked }) });
-      } catch (err) { cb.checked = !cb.checked; row.classList.toggle("done", cb.checked); toast(err.message, "x"); return; }
-      refreshSummary();
-      if (cb.checked) { await addXP(XP_RULES.task, "タスク完了"); await askSpentTime(cb.dataset.task); }
-    }));
-
-    // タイマー開始（そのタスクの時間を計測）
-    $$("#schedule [data-play]").forEach((b) => b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const t = DB.day.tasks.find((x) => x.id === b.dataset.play);
-      if (t) startTaskTimer(t);
-    }));
-
-    // 予定の編集（タイトル・日付・時刻・カテゴリー・タグ・メモ）。日付を変えると別の日へ移動。
-    const editTask = async (t) => {
+    // 予定の編集（日付を変えると別の日へ移動）
+    const editTask = async (date, t) => {
       const v = await modal("予定を編集", [
         { key: "title", label: "やること", type: "text" },
-        { key: "date", label: "日付", type: "date", default: todayStr() },
+        { key: "date", label: "日付", type: "date", default: date },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea", placeholder: "例: ヒーロー部分まで完成。残りは明日。" },
-      ], { ...t, date: todayStr() });
+      ], { ...t, date });
       if (!v || !v.title) return;
-      const newDate = v.date || todayStr();
+      const newDate = v.date || date;
       const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo };
       try {
-        if (newDate !== todayStr()) {
-          await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date: todayStr(), moveTo: newDate }) });
-          DB.day = await api("/api/day");
+        if (newDate !== date) {
+          await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date, moveTo: newDate }) });
+          delete SCHED_CACHE[newDate];
           toast(fmtShort(newDate) + " に移動しました");
         } else {
-          DB.day = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify(body) });
+          await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date }) });
         }
       } catch (err) { toast(err.message, "x"); return; }
-      rerender();
+      await reloadSchedDay(date);
     };
-    const deleteTask = async (t) => {
+    const deleteTask = async (date, t) => {
       if (!(await confirmBox(`「${t.title}」を削除しますか？`))) return;
-      try { DB.day = await api("/api/tasks/" + t.id + "?date=" + todayStr(), { method: "DELETE" }); }
+      try { await api("/api/tasks/" + t.id + "?date=" + date, { method: "DELETE" }); }
       catch (err) { toast(err.message, "x"); return; }
-      rerender();
+      await reloadSchedDay(date);
     };
 
-    // タイトル/本文タップで詳細を開き、そこから編集・削除する
-    const openDetail = async (id) => {
-      const t = DB.day.tasks.find((x) => x.id === id);
-      if (!t) return;
-      const act = await taskDetailModal(t);
-      if (act === "edit") await editTask(t);
-      else if (act === "delete") await deleteTask(t);
-    };
-    $$("#schedule [data-open]").forEach((el) => {
-      el.addEventListener("click", () => openDetail(el.dataset.open));
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(el.dataset.open); } });
-    });
+    // 予定カードを SCHED_DATE の日付で描画。矢印/左右スワイプで前後の日へ（左=過去 / 右=未来）。
+    async function mountSchedule() {
+      const card = $("#schedCard");
+      if (!card) return;
+      const date = SCHED_DATE || todayStr();
+      const isToday = date === todayStr();
+      let day;
+      try {
+        day = isToday ? DB.day : (SCHED_CACHE[date] || (SCHED_CACHE[date] = await api("/api/day?date=" + date)));
+      } catch (err) { card.innerHTML = `<p class="empty">読み込み失敗: ${esc(err.message)}</p>`; return; }
+      if ((SCHED_DATE || todayStr()) !== date) return; // 取得中に日付が変わっていたら破棄
+      const tasks = [...day.tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+      card.innerHTML = `
+        <div class="card-head sched-head">
+          <button class="icon-btn" data-day="prev" aria-label="前の日（過去）">${icon("chevR", 16, "flip")}</button>
+          <h2 class="sched-title">${icon("calendar", 15)} ${esc(isToday ? "今日の予定" : schedDayLabel(date))}</h2>
+          <button class="icon-btn" data-day="next" aria-label="次の日（未来）">${icon("chevR", 16)}</button>
+        </div>
+        ${isToday ? "" : `<div class="sched-back"><button class="btn ghost sm" data-day="today">${icon("rotate", 13)} 今日に戻る</button></div>`}
+        <div id="schedule" class="sched">${tasks.map((t) => schedItemHTML(t, isToday)).join("") || `<p class="empty">${isToday ? "今日の予定はまだありません。「追加」から入れましょう。" : "この日の予定はありません。"}</p>`}</div>`;
 
-    // 追加（タイトル＋任意の日付・開始/終了時刻・カテゴリー・タグ）
+      // 日移動（矢印）
+      $$("[data-day]", card).forEach((b) => b.addEventListener("click", () => {
+        SCHED_DATE = b.dataset.day === "today" ? todayStr() : addDays(date, b.dataset.day === "prev" ? -1 : 1);
+        mountSchedule();
+      }));
+      // 左右スワイプ（右へスワイプ=過去 / 左へスワイプ=未来）。#schedule は毎回作り直すのでリスナは重複しない。
+      attachSwipe($("#schedule", card), (dir) => {
+        SCHED_DATE = addDays(date, dir === "right" ? -1 : 1);
+        mountSchedule();
+      });
+
+      // 完了トグル（＋実績入力）
+      $$("#schedule [data-task]", card).forEach((cb) => cb.addEventListener("change", async () => {
+        const row = cb.closest(".sched-item");
+        row.classList.toggle("done", cb.checked);
+        try {
+          const d = await api("/api/tasks/" + cb.dataset.task, { method: "PATCH", body: JSON.stringify({ date, done: cb.checked }) });
+          if (isToday) DB.day = d; else SCHED_CACHE[date] = d;
+        } catch (err) { cb.checked = !cb.checked; row.classList.toggle("done", cb.checked); toast(err.message, "x"); return; }
+        refreshSummary();
+        if (cb.checked) { await addXP(XP_RULES.task, "タスク完了"); await askSpentTime(date, cb.dataset.task); }
+      }));
+      // タイマー（今日のみボタンあり）
+      $$("#schedule [data-play]", card).forEach((b) => b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const t = day.tasks.find((x) => x.id === b.dataset.play);
+        if (t) startTaskTimer(t);
+      }));
+      // タイトルタップで詳細 → 編集/削除
+      $$("#schedule [data-open]", card).forEach((el) => {
+        const open = async () => {
+          const t = day.tasks.find((x) => x.id === el.dataset.open);
+          if (!t) return;
+          const act = await taskDetailModal(t);
+          if (act === "edit") await editTask(date, t);
+          else if (act === "delete") await deleteTask(date, t);
+        };
+        el.addEventListener("click", open);
+        el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      });
+    }
+    mountSchedule();
+
+    // 追加（既定の日付は表示中の日。開始/終了時刻・カテゴリー・タグ・メモ）
     $("#addTask").addEventListener("click", async () => {
+      const viewDate = SCHED_DATE || todayStr();
       const v = await modal("やることを追加", [
         { key: "title", label: "やること", type: "text", placeholder: "例: LPデザイン制作" },
-        { key: "date", label: "日付", type: "date", default: todayStr() },
+        { key: "date", label: "日付", type: "date", default: viewDate },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（任意）", type: "textarea", placeholder: "例: ◯◯様向け" },
       ]);
       if (!v || !v.title) return;
-      const date = v.date || todayStr();
-      const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo }) });
-      // 今日ぶんならホームを更新。別の日ならホーム(今日)は変えずに知らせるだけ。
-      if (date === todayStr()) { DB.day = day; rerender(); }
+      const date = v.date || viewDate;
+      try {
+        const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo }) });
+        if (date === todayStr()) DB.day = day; else SCHED_CACHE[date] = day;
+      } catch (err) { toast(err.message, "x"); return; }
+      // 追加先が今表示中の日ならカードを更新、そうでなければ知らせるだけ
+      if (date === (SCHED_DATE || todayStr())) await reloadSchedDay(date);
       else toast(fmtShort(date) + " に追加しました");
     });
 
