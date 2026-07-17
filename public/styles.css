@@ -65,9 +65,15 @@ body {
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "tnum";
   transition: background .3s, color .3s;
-  touch-action: manipulation;         /* ダブルタップ拡大を無効化 */
   -webkit-text-size-adjust: 100%;      /* 文字サイズの自動拡大を無効化 */
-  overscroll-behavior-y: contain;      /* ブラウザ標準の引っ張り更新を抑え、自前のPTRを使う */
+}
+/* touch-action/overscroll-behaviorはタッチ端末専用にする。PCのマウス/トラックパッドに適用すると
+   Chromeでホイールスクロールそのものがブロックされてしまう環境があるため、pointer:coarse（指）に限定する */
+@media (pointer: coarse) {
+  body {
+    touch-action: manipulation;         /* ダブルタップ拡大を無効化 */
+    overscroll-behavior-y: contain;      /* ブラウザ標準の引っ張り更新を抑え、自前のPTRを使う */
+  }
 }
 
 /* 上から引っ張って更新のインジケーター */
