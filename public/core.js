@@ -175,7 +175,7 @@ function fieldHTML(f, val, allValues = {}) {
     case "select":
       return label + `<select name="${f.key}">${f.options.map((o) => `<option value="${esc(o)}" ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
     case "textarea":
-      return label + `<textarea name="${f.key}" placeholder="${esc(f.placeholder || "")}">${esc(v)}</textarea>`;
+      return label + `<textarea name="${f.key}" placeholder="${esc(f.placeholder || "")}" ${f.mono ? 'style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"' : ""}>${esc(v)}</textarea>`;
     case "range":
       return label + `<div style="display:flex;gap:12px;align-items:center">
         <input type="range" name="${f.key}" min="0" max="100" step="5" value="${Number(v) || 0}" oninput="this.nextElementSibling.textContent=this.value+'%'">

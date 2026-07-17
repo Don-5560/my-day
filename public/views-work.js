@@ -386,7 +386,7 @@ const planItemsHTML = (items, kind) => (items.length ? items.map((it) => `<div c
 const PLAN_ITEM_FIELDS = (kind) => [
   { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）上海ディズニー" },
   { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
-  { key: "detail", label: "詳細（任意・1行に「名前 金額」）", type: "textarea", placeholder: "飛行機 7万円\nホテル 5万円\nパーク 4万円\nその他 4万円" },
+  { key: "detail", label: "詳細（任意・1行に「名前 金額」）", type: "textarea", mono: true, placeholder: "飛行機 7万円\nホテル 5万円\nパーク 4万円\nその他 4万円" },
   { type: "daterange", label: "期間（任意）", startKey: "from", endKey: "to" },
 ];
 
