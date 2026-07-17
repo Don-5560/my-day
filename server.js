@@ -216,12 +216,16 @@ app.post("/api/tasks", wrap(async (req, res) => {
 
 // タスクの更新: 完了トグル(done) / 項目編集(title,cat,tags,time,endTime,spentMin) / 所要時間加算(addMin)
 app.patch("/api/tasks/:id", wrap(async (req, res) => {
-  const { date = store.today(), done, title, cat, tags, time, endTime, memo, addMin, spentMin } = req.body;
+  const { date = store.today(), done, title, cat, tags, time, endTime, memo, addMin, spentMin, moveTo } = req.body;
   const { id } = req.params;
   let day;
   if (typeof addMin === "number") day = (await store.addTaskTime(date, id, addMin)).day;
   else if (typeof done === "boolean") day = (await store.setTaskDone(date, id, done)).day;
-  else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin })).day;
+  else if (moveTo && moveTo !== date) {
+    // 項目を反映してから別の日へ移動する
+    await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin });
+    day = (await store.moveTask(date, id, moveTo)).day;
+  } else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin })).day;
   res.json(day);
 }));
 

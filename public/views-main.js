@@ -319,14 +319,24 @@ VIEWS.home = {
       if (!t) return;
       const v = await modal("予定を編集", [
         { key: "title", label: "やること", type: "text" },
+        { key: "date", label: "日付", type: "date", default: todayStr() },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea", placeholder: "例: ヒーロー部分まで完成。残りは明日。" },
-      ], t);
+      ], { ...t, date: todayStr() });
       if (!v || !v.title) return;
+      const newDate = v.date || todayStr();
+      const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo };
       try {
-        DB.day = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo }) });
+        if (newDate !== todayStr()) {
+          // 別の日へ移動（項目編集も反映）。ホーム(今日)からは消えるので今日を取り直す。
+          await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date: todayStr(), moveTo: newDate }) });
+          DB.day = await api("/api/day");
+          toast(fmtShort(newDate) + " に移動しました");
+        } else {
+          DB.day = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify(body) });
+        }
       } catch (err) { toast(err.message, "x"); return; }
       rerender();
     }));
