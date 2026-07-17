@@ -792,11 +792,13 @@ function calShowDetail(iso) {
       <span class="pill">${icon("check", 11)} ${tasks.filter((t) => t.done).length}/${tasks.length} タスク</span>
       ${sales ? `<span class="pill grn">${fmtYen(sales)}</span>` : ""}
     </div>
-    <div id="calDetailTasks">${tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}" data-cdopen="${t.id}" role="button" tabindex="0" style="cursor:pointer">
+    <div id="calDetailTasks">${tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}">
+      <input type="checkbox" class="checkbox" data-cdchk="${t.id}" ${t.done ? "checked" : ""}>
       ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
-      <div class="li-body"><div class="li-title">${esc(t.title)}</div>${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}</div>
+      <div class="li-body" data-cdopen="${t.id}" role="button" tabindex="0" style="cursor:pointer">
+        <div class="li-title">${esc(t.title)}</div>${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
+      </div>
       ${t.spentMin ? `<span class="pill grn">${icon("timer", 10)} ${fmtHM(t.spentMin)}</span>` : ""}
-      ${t.done ? `<span class="pill grn">${icon("check", 10)} 完了</span>` : ""}
     </div>`).join("") || '<p class="empty">この日のタスクはありません</p>'}</div>
     ${day?.diary ? `<p class="small" style="white-space:pre-wrap;margin:12px 0 0;color:var(--muted)">${esc(day.diary)}</p>` : ""}`;
 
@@ -849,6 +851,13 @@ function calShowDetail(iso) {
       refresh(d);
     } catch (err) { toast(err.message, "x"); }
   };
+  $$("#calDetailTasks [data-cdchk]").forEach((cb) => cb.addEventListener("change", async () => {
+    try {
+      const d = await api("/api/tasks/" + cb.dataset.cdchk, { method: "PATCH", body: JSON.stringify({ date: iso, done: cb.checked }) });
+      if (cb.checked) await addXP(XP_RULES.task, "タスク完了");
+      refresh(d);
+    } catch (err) { cb.checked = !cb.checked; toast(err.message, "x"); }
+  }));
   $$("#calDetailTasks [data-cdopen]").forEach((el2) => {
     const openIt = async () => {
       const t = (CAL._map[iso]?.tasks || []).find((x) => x.id === el2.dataset.cdopen);
