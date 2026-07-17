@@ -365,13 +365,18 @@ let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 const planPeriodLabel = (it) => (it.from || it.to ? `${it.from ? fmtShort(it.from) : "?"}〜${it.to ? fmtShort(it.to) : "?"}` : "");
 const planItemsHTML = (items, kind) => (items.length ? items.map((it) => {
   const detail = [it.detail, planPeriodLabel(it)].filter(Boolean).join(" ・ ");
-  return `<div class="row plan-row">
+  return `<div class="row plan-row" data-plan-open="${it.id}" data-kind="${kind}" role="button" tabindex="0" style="cursor:pointer">
     <span class="row-title">${esc(it.label)}</span>
     <span class="plan-detail small">${esc(detail)}</span>
     <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
-    <button class="icon-btn danger row-del" data-plan-del="${it.id}" data-kind="${kind}">${icon("trash", 13)}</button>
   </div>`;
 }).join("") : '<p class="empty">まだ項目がありません</p>');
+const PLAN_ITEM_FIELDS = (kind) => [
+  { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）家賃" },
+  { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
+  { key: "detail", label: "詳細（任意）", type: "text", placeholder: "例）6万円×3ヶ月" },
+  { type: "daterange", label: "期間（任意）", startKey: "from", endKey: "to" },
+];
 
 VIEWS.money = {
   title: "収支", icon: "wallet",
@@ -468,23 +473,32 @@ VIEWS.money = {
     $$("[data-mtab]", main).forEach((b) => b.addEventListener("click", () => { MONEY_TAB = b.dataset.mtab; rerender(); }));
     $$("[data-plan-add]", main).forEach((b) => b.addEventListener("click", async () => {
       const kind = b.dataset.planAdd;
-      const v = await modal(kind === "income" ? "予想収入の項目を追加" : "予想出費の項目を追加", [
-        { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）家賃" },
-        { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
-        { key: "detail", label: "詳細（任意）", type: "text", placeholder: "例）6万円×3ヶ月" },
-        { type: "daterange", label: "期間（任意）", startKey: "from", endKey: "to" },
-      ]);
+      const v = await modal(kind === "income" ? "予想収入の項目を追加" : "予想出費の項目を追加", PLAN_ITEM_FIELDS(kind));
       if (!v || !v.label || !v.amount) return;
       DB.budgetplan[kind].push({ id: uid(), label: v.label, amount: Math.round(v.amount), detail: v.detail, from: v.from, to: v.to });
       await saveDb("budgetplan");
       rerender();
     }));
-    $$("[data-plan-del]", main).forEach((b) => b.addEventListener("click", async () => {
-      const kind = b.dataset.kind;
-      DB.budgetplan[kind] = DB.budgetplan[kind].filter((i) => i.id !== b.dataset.planDel);
-      await saveDb("budgetplan");
-      rerender();
-    }));
+    // 項目をタップ→編集（削除はその中のボタンから）
+    $$("[data-plan-open]", main).forEach((el) => {
+      const open = async () => {
+        const kind = el.dataset.kind;
+        const it = DB.budgetplan[kind].find((i) => i.id === el.dataset.planOpen);
+        if (!it) return;
+        const v = await modal(kind === "income" ? "予想収入の項目を編集" : "予想出費の項目を編集", PLAN_ITEM_FIELDS(kind), it, { onDelete: "この項目を削除しますか？" });
+        if (!v) return;
+        if (v.__delete) {
+          DB.budgetplan[kind] = DB.budgetplan[kind].filter((i) => i.id !== it.id);
+        } else {
+          if (!v.label || !v.amount) return;
+          Object.assign(it, { label: v.label, amount: Math.round(v.amount), detail: v.detail, from: v.from, to: v.to });
+        }
+        await saveDb("budgetplan");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
     if (MONEY_TAB !== "actual") return;
 
     const addTx = async (type, cats) => {

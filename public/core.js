@@ -205,7 +205,8 @@ function fieldHTML(f, val, allValues = {}) {
   }
 }
 
-function modal(title, fields, values = {}) {
+// opts.onDelete: 文字列を渡すと確認メッセージ付きの削除ボタンをフッター左端に出す。押すと { __delete: true } で解決する
+function modal(title, fields, values = {}, opts = {}) {
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
     wrap.innerHTML = `<div class="overlay"><div class="modal">
@@ -213,6 +214,7 @@ function modal(title, fields, values = {}) {
       <form id="mform">
         ${fields.map((f) => fieldHTML(f, values[f.key], values)).join("")}
         <div class="modal-foot">
+          ${opts.onDelete ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
           <button type="submit" class="btn">${icon("checkline", 15)} 保存</button>
         </div>
@@ -222,6 +224,11 @@ function modal(title, fields, values = {}) {
     const close = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
     wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(null); });
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
+    if (opts.onDelete) {
+      wrap.querySelector("[data-del]").addEventListener("click", async () => {
+        if (await confirmBox(opts.onDelete)) close({ __delete: true });
+      });
+    }
     $("#mform").addEventListener("submit", (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
