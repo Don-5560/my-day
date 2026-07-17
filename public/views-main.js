@@ -12,7 +12,7 @@ const NAV_GROUPS = [
 const BOTTOM_NAV = ["calendar", "todo", "home", "habits", "menu"];
 // 右ドロワーの構成（モバイルの「メニュー」から開く）
 const DRAWER_GROUPS = [
-  { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "売上・収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
+  { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
   { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"]] },
   { label: "人生・習慣", items: [["goals", "目標管理"], ["badges", "実績・バッジ"]] },
   { label: "分析・レポート", items: [["report", "日報"], ["analytics", "分析・レポート"]] },

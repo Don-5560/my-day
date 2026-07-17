@@ -359,13 +359,20 @@ VIEWS.sales = {
 const TX_INCOME_CATS = ["Web制作", "Uber", "その他"];
 const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他"];
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
+let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
+
+const planItemsHTML = (items, kind) => (items.length ? items.map((it) => `<div class="row">
+    <div class="row-title small">${esc(it.label)}${it.memo ? `<div class="small" style="color:var(--faint);white-space:pre-wrap">${esc(it.memo)}</div>` : ""}</div>
+    <strong style="color:${kind === "income" ? "var(--green)" : "var(--red)"}">${kind === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
+    <button class="icon-btn danger row-del" data-plan-del="${it.id}" data-kind="${kind}">${icon("trash", 13)}</button>
+  </div>`).join("") : '<p class="empty">まだ項目がありません</p>');
 
 VIEWS.money = {
-  title: "お金", icon: "wallet",
+  title: "収支", icon: "wallet",
   async render(main) {
     const mk = monthKey(todayStr());
     main.innerHTML = `
-      <div class="page-head"><div><p class="eyebrow">Money</p><h1>お金</h1></div></div>
+      <div class="page-head"><div><p class="eyebrow">収支管理</p><h1>収支</h1></div></div>
       <p class="empty">読み込み中…</p>`;
 
     let fin, txs;
@@ -378,6 +385,12 @@ VIEWS.money = {
     DB.finance = fin;
     if (CURRENT !== "money") return; // 取得中に他画面へ移動していたら描画しない
 
+    // 予想収支の1行目に「現在の残高」を自動で入れる（初回のみ。以後は自分で編集・削除できる）
+    if (!DB.budgetplan.income.length) {
+      DB.budgetplan.income = [{ id: uid(), label: "現在の残高", amount: fin.currentBalance }];
+      await saveDb("budgetplan");
+    }
+
     const groupByCat = (list) => {
       const m = {};
       for (const t of list) m[t.category] = (m[t.category] || 0) + t.amount;
@@ -385,16 +398,24 @@ VIEWS.money = {
     };
     const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
     const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
+    const planIncTotal = DB.budgetplan.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const planExpTotal = DB.budgetplan.expense.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const planResult = planIncTotal - planExpTotal;
 
     main.innerHTML = `
       <div class="page-head">
-        <div><p class="eyebrow">Money</p><h1>お金</h1></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div><p class="eyebrow">収支管理</p><h1>収支</h1></div>
+        ${MONEY_TAB === "actual" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="setInit">${icon("wallet", 15)} 初期残高</button>
           <button class="btn" id="addIncome">${icon("plus", 15)} 収入</button>
           <button class="btn" id="addExpense" style="background:var(--red);border:none">${icon("plus", 15)} 支出</button>
-        </div>
+        </div>` : ""}
       </div>
+      <div class="tabs" style="margin-bottom:16px">
+        <button class="tab ${MONEY_TAB === "actual" ? "active" : ""}" data-mtab="actual">収支</button>
+        <button class="tab ${MONEY_TAB === "plan" ? "active" : ""}" data-mtab="plan">予想収支</button>
+      </div>
+      ${MONEY_TAB === "actual" ? `
       <div class="stat-grid">
         ${statCard("wallet", signedYen(fin.currentBalance), "現在の残高")}
         ${statCard("chart", fmtYen(fin.incomeThisMonth), "今月の収入")}
@@ -404,16 +425,6 @@ VIEWS.money = {
       <div class="grid2">
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
-      </div>
-      <div class="card" style="margin-top:18px">
-        <h2>${icon("chart", 15)} 予想収支を計算</h2>
-        <p class="small" style="color:var(--muted);margin:0 0 12px">現在の残高（${signedYen(fin.currentBalance)}）に、予想の収入・支出を足し引きした結果をその場で計算します。保存はされません。</p>
-        <div class="grid2">
-          <div><label class="f-label">予想収入（円）</label><input type="number" id="fcIncome" placeholder="0"></div>
-          <div><label class="f-label">予想支出（円）</label><input type="number" id="fcExpense" placeholder="0"></div>
-        </div>
-        <p style="margin:14px 0 0;font-size:14px;color:var(--muted)">予想残高</p>
-        <p id="fcResult" style="margin:2px 0 0;font-size:26px;font-weight:800">${signedYen(fin.currentBalance)}</p>
       </div>
       <div class="card" style="margin-top:18px">
         <h2>${icon("calendar", 15)} 今月の取引</h2>
@@ -426,7 +437,48 @@ VIEWS.money = {
             <button class="icon-btn danger row-del" data-del="${t.id}">${icon("trash", 13)}</button>
           </div>`;
         }).join("") || '<p class="empty">今月の取引はまだありません</p>'}
-      </div>`;
+      </div>` : `
+      <p class="small" style="color:var(--muted);margin:-8px 0 16px">項目を自由に追加して、予想の収支と最終的な残高を計算します。内容は保存され、あとから見返せます。</p>
+      <div class="grid2">
+        <div class="card" style="margin-bottom:0">
+          <h2>${icon("layers", 15)} 予想収入</h2>
+          ${planItemsHTML(DB.budgetplan.income, "income")}
+          <button class="btn ghost sm" data-plan-add="income" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
+          <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(planIncTotal)}</strong></p>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <h2>${icon("layers", 15)} 予想出費</h2>
+          ${planItemsHTML(DB.budgetplan.expense, "expense")}
+          <button class="btn ghost sm" data-plan-add="expense" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
+          <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(planExpTotal)}</strong></p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <h2>${icon("chart", 15)} 予想残高</h2>
+        <p class="small" style="color:var(--muted);margin:0 0 6px">${fmtYen(planIncTotal)} − ${fmtYen(planExpTotal)}</p>
+        <p style="margin:0;font-size:28px;font-weight:800;color:${planResult < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(planResult)}</p>
+      </div>`}`;
+
+    $$("[data-mtab]", main).forEach((b) => b.addEventListener("click", () => { MONEY_TAB = b.dataset.mtab; rerender(); }));
+    $$("[data-plan-add]", main).forEach((b) => b.addEventListener("click", async () => {
+      const kind = b.dataset.planAdd;
+      const v = await modal(kind === "income" ? "予想収入の項目を追加" : "予想出費の項目を追加", [
+        { key: "label", label: "項目名", type: "text", placeholder: kind === "income" ? "例）タックス" : "例）台湾旅行（3ヶ月）" },
+        { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
+        { key: "memo", label: "内訳など（任意）", type: "textarea", placeholder: "例）家賃6万×3ヶ月、食費5万×3ヶ月" },
+      ]);
+      if (!v || !v.label || !v.amount) return;
+      DB.budgetplan[kind].push({ id: uid(), label: v.label, amount: Math.round(v.amount), memo: v.memo });
+      await saveDb("budgetplan");
+      rerender();
+    }));
+    $$("[data-plan-del]", main).forEach((b) => b.addEventListener("click", async () => {
+      const kind = b.dataset.kind;
+      DB.budgetplan[kind] = DB.budgetplan[kind].filter((i) => i.id !== b.dataset.planDel);
+      await saveDb("budgetplan");
+      rerender();
+    }));
+    if (MONEY_TAB !== "actual") return;
 
     const addTx = async (type, cats) => {
       // 収入は売上ページと同じ項目（金額・経費・収入源・メモ）に揃える
