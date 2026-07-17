@@ -406,6 +406,16 @@ VIEWS.money = {
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
       </div>
       <div class="card" style="margin-top:18px">
+        <h2>${icon("chart", 15)} 予想収支を計算</h2>
+        <p class="small" style="color:var(--muted);margin:0 0 12px">現在の残高（${signedYen(fin.currentBalance)}）に、予想の収入・支出を足し引きした結果をその場で計算します。保存はされません。</p>
+        <div class="grid2">
+          <div><label class="f-label">予想収入（円）</label><input type="number" id="fcIncome" placeholder="0"></div>
+          <div><label class="f-label">予想支出（円）</label><input type="number" id="fcExpense" placeholder="0"></div>
+        </div>
+        <p style="margin:14px 0 0;font-size:14px;color:var(--muted)">予想残高</p>
+        <p id="fcResult" style="margin:2px 0 0;font-size:26px;font-weight:800">${signedYen(fin.currentBalance)}</p>
+      </div>
+      <div class="card" style="margin-top:18px">
         <h2>${icon("calendar", 15)} 今月の取引</h2>
         ${txs.map((t) => {
           const inc = t.type === "income";
@@ -452,6 +462,17 @@ VIEWS.money = {
       toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
       rerender();
     };
+    // 予想収支電卓: 保存はせず、現在の残高に予想の収入/支出を足し引きして即座に表示するだけ
+    const fcRecalc = () => {
+      const inc = Number($("#fcIncome").value) || 0;
+      const exp = Number($("#fcExpense").value) || 0;
+      const result = fin.currentBalance + inc - exp;
+      const el = $("#fcResult");
+      el.textContent = signedYen(result);
+      el.style.color = result < 0 ? "var(--red)" : "var(--ink)";
+    };
+    $("#fcIncome").addEventListener("input", fcRecalc);
+    $("#fcExpense").addEventListener("input", fcRecalc);
     $("#addIncome").addEventListener("click", () => addTx("income", [...TX_INCOME_CATS, ...(DB.categories.income || [])]));
     $("#addExpense").addEventListener("click", () => addTx("expense", [...TX_EXPENSE_CATS, ...(DB.categories.expense || [])]));
     $("#setInit").addEventListener("click", async () => {
