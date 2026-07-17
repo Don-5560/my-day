@@ -30,6 +30,46 @@ const planMin = (t) => {
   return Number.isFinite(d) && d > 0 ? d : 0;
 };
 const PRIS = ["高", "中", "低"];
+
+// タスクの詳細（情報を表示し、右上に編集・下に削除）。返り値: "edit" | "delete" | "toggle" | null
+// ホームの予定・カレンダーの日別詳細の両方から使う共通モーダル。
+function taskDetailModal(t, opts = {}) {
+  return new Promise((resolve) => {
+    const wrap = $("#modalWrap");
+    const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "var(--line)";
+    const pm = planMin(t);
+    const range = t.time ? (esc(t.time) + (t.endTime ? " → " + esc(t.endTime) : "")) : "時刻の指定なし";
+    const rows = [
+      ["時間", range + (pm ? `（${fmtHM(pm)}）` : "")],
+      t.spentMin ? ["実績", fmtHM(t.spentMin)] : null,
+      t.cat ? ["カテゴリー", `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>`] : null,
+      (t.tags && t.tags.length) ? ["タグ", t.tags.map((x) => `<span class="pill">#${esc(x)}</span>`).join(" ")] : null,
+      ["状態", t.done ? "✅ 完了" : "未完了"],
+    ].filter(Boolean);
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head">
+        <h3>${esc(t.title)}</h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button type="button" class="btn ghost sm" data-act="edit">${icon("edit", 14)} 編集</button>
+          <button type="button" class="icon-btn" data-x>${icon("x", 17)}</button>
+        </div>
+      </div>
+      <div class="td-info">
+        ${rows.map(([k, v]) => `<div class="td-row"><span class="td-k">${esc(k)}</span><span class="td-v">${v}</span></div>`).join("")}
+        ${t.memo ? `<div class="td-memo">${esc(t.memo)}</div>` : ""}
+      </div>
+      <div class="modal-foot" style="justify-content:space-between">
+        <button type="button" class="btn ghost sm" data-act="delete" style="color:var(--red)">${icon("trash", 14)} 削除</button>
+        ${opts.canToggle ? `<button type="button" class="btn sm" data-act="toggle">${t.done ? "未完了に戻す" : "完了にする"}</button>` : `<button type="button" class="btn sm" data-x>閉じる</button>`}
+      </div>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+    const close = (r) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(r); };
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
+    $$("[data-act]", wrap).forEach((b) => b.addEventListener("click", () => close(b.dataset.act)));
+  });
+}
 const MOODS = ["laugh", "smile", "meh", "frown", "tired"];
 
 // ===== ルーター =====
@@ -224,15 +264,13 @@ VIEWS.home = {
               ${pm ? `<span class="st-dur">${fmtHM(pm)}</span>` : ""}
             </div>
             <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
-            <div class="li-body">
+            <div class="li-body" data-open="${t.id}" role="button" tabindex="0">
               <div class="li-title">${esc(t.title)}</div>
               ${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
               ${badges ? `<div class="li-tags">${badges}</div>` : ""}
             </div>
             <div class="li-right">
-              <button class="icon-btn" data-play="${t.id}" aria-label="タイマー開始">${icon("play", 14)}</button>
-              <button class="icon-btn" data-edit="${t.id}" aria-label="編集">${icon("edit", 14)}</button>
-              <button class="icon-btn danger row-del" data-del="${t.id}" aria-label="削除">${icon("trash", 14)}</button>
+              <button class="icon-btn" data-play="${t.id}" aria-label="タイマー">${icon("timer", 15)}</button>
             </div>
           </div>`;
         }).join("") || '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>'}
@@ -298,25 +336,15 @@ VIEWS.home = {
       if (cb.checked) { await addXP(XP_RULES.task, "タスク完了"); await askSpentTime(cb.dataset.task); }
     }));
 
-    // 削除: その場で行を消す
-    $$("#schedule [data-del]").forEach((b) => b.addEventListener("click", async () => {
-      try { DB.day = await api("/api/tasks/" + b.dataset.del + "?date=" + todayStr(), { method: "DELETE" }); }
-      catch (err) { toast(err.message, "x"); return; }
-      const row = b.closest(".sched-item"); if (row) row.remove();
-      refreshSummary();
-      if (!DB.day.tasks.length) $("#schedule").innerHTML = '<p class="empty">今日の予定はまだありません。「追加」から入れましょう。</p>';
-    }));
-
     // タイマー開始（そのタスクの時間を計測）
-    $$("#schedule [data-play]").forEach((b) => b.addEventListener("click", () => {
+    $$("#schedule [data-play]").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
       const t = DB.day.tasks.find((x) => x.id === b.dataset.play);
       if (t) startTaskTimer(t);
     }));
 
-    // 編集（タイトル・開始/終了時刻・カテゴリー・タグ）
-    $$("#schedule [data-edit]").forEach((b) => b.addEventListener("click", async () => {
-      const t = DB.day.tasks.find((x) => x.id === b.dataset.edit);
-      if (!t) return;
+    // 予定の編集（タイトル・日付・時刻・カテゴリー・タグ・メモ）。日付を変えると別の日へ移動。
+    const editTask = async (t) => {
       const v = await modal("予定を編集", [
         { key: "title", label: "やること", type: "text" },
         { key: "date", label: "日付", type: "date", default: todayStr() },
@@ -330,7 +358,6 @@ VIEWS.home = {
       const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo };
       try {
         if (newDate !== todayStr()) {
-          // 別の日へ移動（項目編集も反映）。ホーム(今日)からは消えるので今日を取り直す。
           await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date: todayStr(), moveTo: newDate }) });
           DB.day = await api("/api/day");
           toast(fmtShort(newDate) + " に移動しました");
@@ -339,7 +366,26 @@ VIEWS.home = {
         }
       } catch (err) { toast(err.message, "x"); return; }
       rerender();
-    }));
+    };
+    const deleteTask = async (t) => {
+      if (!(await confirmBox(`「${t.title}」を削除しますか？`))) return;
+      try { DB.day = await api("/api/tasks/" + t.id + "?date=" + todayStr(), { method: "DELETE" }); }
+      catch (err) { toast(err.message, "x"); return; }
+      rerender();
+    };
+
+    // タイトル/本文タップで詳細を開き、そこから編集・削除する
+    const openDetail = async (id) => {
+      const t = DB.day.tasks.find((x) => x.id === id);
+      if (!t) return;
+      const act = await taskDetailModal(t);
+      if (act === "edit") await editTask(t);
+      else if (act === "delete") await deleteTask(t);
+    };
+    $$("#schedule [data-open]").forEach((el) => {
+      el.addEventListener("click", () => openDetail(el.dataset.open));
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(el.dataset.open); } });
+    });
 
     // 追加（タイトル＋任意の日付・開始/終了時刻・カテゴリー・タグ）
     $("#addTask").addEventListener("click", async () => {

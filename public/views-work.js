@@ -792,12 +792,11 @@ function calShowDetail(iso) {
       <span class="pill">${icon("check", 11)} ${tasks.filter((t) => t.done).length}/${tasks.length} タスク</span>
       ${sales ? `<span class="pill grn">${fmtYen(sales)}</span>` : ""}
     </div>
-    <div id="calDetailTasks">${tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}">
-      <input type="checkbox" class="checkbox" data-cdchk="${t.id}" ${t.done ? "checked" : ""}>
+    <div id="calDetailTasks">${tasks.map((t) => `<div class="list-item ${t.done ? "done" : ""}" data-cdopen="${t.id}" role="button" tabindex="0" style="cursor:pointer">
       ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
-      <div class="li-body"><div class="li-title">${esc(t.title)}</div></div>
-      ${t.spentMin ? `<span class="pill grn">${fmtHM(t.spentMin)}</span>` : ""}
-      <button class="icon-btn danger" data-cddel="${t.id}">${icon("trash", 13)}</button>
+      <div class="li-body"><div class="li-title">${esc(t.title)}</div>${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}</div>
+      ${t.spentMin ? `<span class="pill grn">${icon("timer", 10)} ${fmtHM(t.spentMin)}</span>` : ""}
+      ${t.done ? `<span class="pill grn">${icon("check", 10)} 完了</span>` : ""}
     </div>`).join("") || '<p class="empty">この日のタスクはありません</p>'}</div>
     ${day?.diary ? `<p class="small" style="white-space:pre-wrap;margin:12px 0 0;color:var(--muted)">${esc(day.diary)}</p>` : ""}`;
 
@@ -814,15 +813,54 @@ function calShowDetail(iso) {
     const d = await api("/api/tasks", { method: "POST", body: JSON.stringify({ date: iso, title: v.title, time: v.time, cat: v.cat, tags: v.tags }) });
     refresh(d);
   });
-  $$("#calDetailTasks [data-cdchk]").forEach((cb) => cb.addEventListener("change", async () => {
-    const d = await api("/api/tasks/" + cb.dataset.cdchk, { method: "PATCH", body: JSON.stringify({ date: iso, done: cb.checked }) });
-    if (cb.checked) await addXP(XP_RULES.task, "タスク完了");
-    refresh(d);
-  }));
-  $$("#calDetailTasks [data-cddel]").forEach((b) => b.addEventListener("click", async () => {
-    const d = await api("/api/tasks/" + b.dataset.cddel + "?date=" + iso, { method: "DELETE" });
-    refresh(d);
-  }));
+  // タップ→詳細。そこから編集（右上）・削除・完了トグル。
+  const editCalTask = async (t) => {
+    const v = await modal(`${fmtJP(iso)} の予定を編集`, [
+      { key: "title", label: "やること", type: "text" },
+      { key: "date", label: "日付", type: "date", default: iso },
+      { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
+      { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS] },
+      { key: "tags", label: "タグ（任意）", type: "tags" },
+      { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea" },
+    ], { ...t, date: iso });
+    if (!v || !v.title) return;
+    const newDate = v.date || iso;
+    const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo };
+    try {
+      if (newDate !== iso) {
+        await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date: iso, moveTo: newDate }) });
+        toast(fmtShort(newDate) + " に移動しました");
+        rerender(); // 元の日・移動先の両方を反映（詳細は自動で開き直される）
+      } else {
+        const d = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify(body) });
+        refresh(d);
+      }
+    } catch (err) { toast(err.message, "x"); }
+  };
+  const deleteCalTask = async (t) => {
+    if (!(await confirmBox(`「${t.title}」を削除しますか？`))) return;
+    try { const d = await api("/api/tasks/" + t.id + "?date=" + iso, { method: "DELETE" }); refresh(d); }
+    catch (err) { toast(err.message, "x"); }
+  };
+  const toggleCalTask = async (t) => {
+    try {
+      const d = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ date: iso, done: !t.done }) });
+      if (!t.done) await addXP(XP_RULES.task, "タスク完了");
+      refresh(d);
+    } catch (err) { toast(err.message, "x"); }
+  };
+  $$("#calDetailTasks [data-cdopen]").forEach((el2) => {
+    const openIt = async () => {
+      const t = (CAL._map[iso]?.tasks || []).find((x) => x.id === el2.dataset.cdopen);
+      if (!t) return;
+      const act = await taskDetailModal(t, { canToggle: true });
+      if (act === "edit") await editCalTask(t);
+      else if (act === "delete") await deleteCalTask(t);
+      else if (act === "toggle") await toggleCalTask(t);
+    };
+    el2.addEventListener("click", openIt);
+    el2.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openIt(); } });
+  });
 
   el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
