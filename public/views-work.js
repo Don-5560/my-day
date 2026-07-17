@@ -360,6 +360,16 @@ const TX_INCOME_CATS = ["Web制作", "Uber", "その他"];
 const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他"];
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
+let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
+let MONEY_CAL_DAY = null; // カレンダーで選択中の日（nullなら月全体を表示）
+// カレンダーの枠に収めるための短い金額表記（1万円未満はそのまま、以上は「15万」のように丸める）
+const fmtYenShort = (n) => {
+  n = Math.round(Number(n) || 0);
+  if (Math.abs(n) < 10000) return n.toLocaleString();
+  const v = Math.round(n / 1000) / 10;
+  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + "万";
+};
+const shiftMonth = (mk, n) => { const [y, m] = mk.split("-").map(Number); return monthKey(isoOf(new Date(y, m - 1 + n, 1))); };
 
 // 期間（開始日・終了日、どちらも任意）を「7/1〜9/30」のような短い表記にする
 const planPeriodLabel = (it) => (it.from || it.to ? `${it.from ? fmtShort(it.from) : "?"}〜${it.to ? fmtShort(it.to) : "?"}` : "");
@@ -469,17 +479,78 @@ async function planItemModal(kind, initial) {
   }
 }
 
+// 収支カレンダー: 月の日付グリッドに、その日の収入/支出を小さく表示する
+function moneyCalGridHTML(mk, txs) {
+  const [y, m] = mk.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const gs = new Date(first); gs.setDate(1 - first.getDay());
+  const from = isoOf(gs);
+  const byDate = {};
+  for (const t of txs) { (byDate[t.date] ||= { income: 0, expense: 0 })[t.type] += t.amount; }
+  const today = todayStr();
+  let cells = "";
+  for (let i = 0; i < 42; i++) {
+    const iso = calAdd(from, i);
+    const d = new Date(iso + "T00:00:00");
+    const other = d.getMonth() !== m - 1;
+    const day = byDate[iso];
+    const cls = ["cal-cell", "money-cell", other ? "other" : "", iso === today ? "today" : "", MONEY_CAL_DAY === iso ? "selected" : ""].join(" ");
+    cells += `<button class="${cls}" ${other ? "" : `data-mday="${iso}"`}>
+      <span class="cc-num">${d.getDate()}</span>
+      ${day?.income ? `<span class="mc-inc">+${fmtYenShort(day.income)}</span>` : ""}
+      ${day?.expense ? `<span class="mc-exp">-${fmtYenShort(day.expense)}</span>` : ""}
+    </button>`;
+  }
+  return `<div class="cal-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-grid" id="moneyCalGrid">${cells}</div>`;
+}
+// 取引一覧。日付ごとにグループ化し、タップで編集モーダルを開く
+function moneyTxListHTML(txs, filterDay) {
+  const list = filterDay ? txs.filter((t) => t.date === filterDay) : txs;
+  if (!list.length) return '<p class="empty">この期間の取引はありません</p>';
+  const groups = [];
+  for (const t of list) {
+    const g = groups[groups.length - 1];
+    if (g && g.date === t.date) g.items.push(t); else groups.push({ date: t.date, items: [t] });
+  }
+  return groups.map((g) => {
+    const net = g.items.reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
+    return `<div class="tx-date-group">
+      <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(net)}</strong></div>
+      ${g.items.map((t) => {
+        const inc = t.type === "income";
+        return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
+          <span class="pill" style="background:${inc ? "rgba(52,211,153,.15)" : "rgba(248,113,113,.15)"};color:${inc ? "var(--green)" : "var(--red)"}">${esc(t.category)}</span>
+          <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
+          <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }).join("");
+}
+// 取引の編集モーダル（削除もこの中から）
+function transactionModal(t) {
+  const cats = t.type === "income" ? [...TX_INCOME_CATS, ...(DB.categories.income || [])] : [...TX_EXPENSE_CATS, ...(DB.categories.expense || [])];
+  const fields = [
+    { key: "date", label: "日付", type: "date" },
+    { key: "amount", label: "金額（円）", type: "money" },
+    { key: "category", label: t.type === "income" ? "収入源" : "カテゴリ", type: "select", options: cats },
+    { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
+  ];
+  return modalWithCatAdd(t.type === "income" ? "収入を編集" : "支出を編集", fields, t, "category", t.type, { onDelete: "この取引を削除しますか？" });
+}
+
 VIEWS.money = {
   title: "収支", icon: "wallet",
   async render(main) {
-    const mk = monthKey(todayStr());
+    if (!MONEY_MONTH) MONEY_MONTH = monthKey(todayStr());
+    const mk = MONEY_MONTH;
     main.innerHTML = `
       <div class="page-head"><div><p class="eyebrow">収支管理</p><h1>収支</h1></div></div>
       <p class="empty">読み込み中…</p>`;
 
     let fin, txs;
     try {
-      [fin, txs] = await Promise.all([api("/api/finance"), api("/api/transactions?month=" + mk)]);
+      [fin, txs] = await Promise.all([api("/api/finance?month=" + mk), api("/api/transactions?month=" + mk)]);
     } catch (e) {
       main.innerHTML = `<p class="empty">読み込みに失敗しました: ${esc(e.message)}</p>`;
       return;
@@ -539,27 +610,28 @@ VIEWS.money = {
         <button class="tab ${MONEY_TAB === "plan" ? "active" : ""}" data-mtab="plan">予想収支</button>
       </div>
       ${MONEY_TAB === "actual" ? `
+      <div class="card" style="margin-bottom:18px">
+        <div class="cal-nav" style="margin-bottom:10px">
+          <button class="icon-btn" id="mcalPrev">${icon("chevR", 16, "flip")}</button>
+          <button class="btn ghost sm" id="mcalToday">今月</button>
+          <button class="icon-btn" id="mcalNext">${icon("chevR", 16)}</button>
+          <span class="cal-title">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月</span>
+        </div>
+        ${moneyCalGridHTML(mk, txs)}
+      </div>
       <div class="stat-grid">
         ${statCard("wallet", signedYen(fin.currentBalance), "現在の残高")}
-        ${statCard("chart", fmtYen(fin.incomeThisMonth), "今月の収入")}
-        ${statCard("chart", fmtYen(fin.expenseThisMonth), "今月の支出")}
-        ${statCard(fin.netThisMonth >= 0 ? "trophy" : "clock", signedYen(fin.netThisMonth), "今月の収支")}
+        ${statCard("chart", fmtYen(fin.incomeThisMonth), "収入")}
+        ${statCard("chart", fmtYen(fin.expenseThisMonth), "支出")}
+        ${statCard(fin.netThisMonth >= 0 ? "trophy" : "clock", signedYen(fin.netThisMonth), "収支")}
       </div>
       <div class="grid2">
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 今月の支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
+        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
+        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
       </div>
       <div class="card" style="margin-top:18px">
-        <h2>${icon("calendar", 15)} 今月の取引</h2>
-        ${txs.map((t) => {
-          const inc = t.type === "income";
-          return `<div class="row">
-            <span class="pill" style="background:${inc ? "rgba(52,211,153,.15)" : "rgba(248,113,113,.15)"};color:${inc ? "var(--green)" : "var(--red)"}">${esc(t.category)}</span>
-            <span class="row-title small">${fmtShort(t.date)}${t.memo ? " — " + esc(t.memo) : ""}</span>
-            <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
-            <button class="icon-btn danger row-del" data-del="${t.id}">${icon("trash", 13)}</button>
-          </div>`;
-        }).join("") || '<p class="empty">今月の取引はまだありません</p>'}
+        <h2>${icon("calendar", 15)} 取引${MONEY_CAL_DAY ? `（${fmtDateFull(MONEY_CAL_DAY)}）` : ""}</h2>
+        ${moneyTxListHTML(txs, MONEY_CAL_DAY)}
       </div>` : `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">ブロックを自由に追加して、時系列で予想の収支を組み立てられます。内容は保存され、あとから見返せます。</p>
       <div class="card" style="margin-bottom:0">
@@ -632,6 +704,39 @@ VIEWS.money = {
     });
     if (MONEY_TAB !== "actual") return;
 
+    // 収支カレンダー: 月の移動（ボタン・スワイプ）と日タップでの絞り込み
+    $("#mcalPrev").addEventListener("click", () => { MONEY_MONTH = shiftMonth(mk, -1); MONEY_CAL_DAY = null; rerender(); });
+    $("#mcalNext").addEventListener("click", () => { MONEY_MONTH = shiftMonth(mk, 1); MONEY_CAL_DAY = null; rerender(); });
+    $("#mcalToday").addEventListener("click", () => { MONEY_MONTH = monthKey(todayStr()); MONEY_CAL_DAY = null; rerender(); });
+    attachSwipe($("#moneyCalGrid", main), (dir) => { MONEY_MONTH = shiftMonth(mk, dir === "right" ? -1 : 1); MONEY_CAL_DAY = null; rerender(); });
+    $$("[data-mday]", main).forEach((b) => b.addEventListener("click", () => {
+      MONEY_CAL_DAY = MONEY_CAL_DAY === b.dataset.mday ? null : b.dataset.mday;
+      rerender();
+    }));
+    // 取引をタップ→編集（削除もこのモーダルの中から）
+    $$("[data-tx-open]", main).forEach((el) => {
+      const open = async () => {
+        const t = txs.find((x) => x.id === el.dataset.txOpen);
+        if (!t) return;
+        const v = await transactionModal(t);
+        if (!v) return;
+        try {
+          if (v.__delete) {
+            await api("/api/transactions/" + t.id, { method: "DELETE" });
+          } else {
+            await api("/api/transactions/" + t.id, {
+              method: "PATCH",
+              body: JSON.stringify({ date: v.date, category: v.category, amount: Math.round(v.amount), memo: v.memo }),
+            });
+          }
+        } catch (e) { toast(e.message, "x"); return; }
+        if (t.type === "income") await refreshSales(); // 売上明細のミラーにも反映
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+
     const addTx = async (type, cats) => {
       // 収入は売上ページと同じ項目（金額・経費・収入源・メモ）に揃える
       const fields = type === "income" ? [
@@ -679,12 +784,6 @@ VIEWS.money = {
       toast("初期残高を設定しました");
       rerender();
     });
-    $$("[data-del]").forEach((b) => b.addEventListener("click", async () => {
-      try { await api("/api/transactions/" + b.dataset.del, { method: "DELETE" }); }
-      catch (e) { toast(e.message, "x"); return; }
-      await refreshSales(); // ミラーの売上明細も消えるので反映
-      rerender();
-    }));
   },
 };
 

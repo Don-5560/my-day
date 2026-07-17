@@ -252,12 +252,13 @@ function modal(title, fields, values = {}, opts = {}) {
 
 // カテゴリーselectに「新規追加」を足したモーダル。選ぶと名前を聞いて保存し、他の入力済み項目は保持したまま再表示する
 const NEW_CAT_OPT = "＋ 新しいカテゴリーを追加";
-async function modalWithCatAdd(title, fields, values = {}, catKey = "cat", docKey = "task") {
+async function modalWithCatAdd(title, fields, values = {}, catKey = "cat", docKey = "task", opts = {}) {
   const idx = fields.findIndex((f) => f.key === catKey);
   for (;;) {
     fields[idx] = { ...fields[idx], options: [...fields[idx].options.filter((o) => o !== NEW_CAT_OPT), NEW_CAT_OPT] };
-    const v = await modal(title, fields, values);
+    const v = await modal(title, fields, values, opts);
     if (!v) return null;
+    if (v.__delete) return v;
     if (v[catKey] !== NEW_CAT_OPT) return v;
     const nv = await modal("新しいカテゴリーを追加", [{ key: "name", label: "カテゴリー名", type: "text", placeholder: "例）読書" }]);
     values = { ...v, [catKey]: values[catKey] || "" };

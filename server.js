@@ -288,6 +288,9 @@ app.post("/api/transactions", wrap(async (req, res) => {
 app.post("/api/sales", wrap(async (req, res) => {
   res.json(await store.recordSale(req.body));
 }));
+app.patch("/api/transactions/:id", wrap(async (req, res) => {
+  res.json(await store.updateTransaction(req.params.id, req.body));
+}));
 app.delete("/api/transactions/:id", wrap(async (req, res) => {
   res.json(await store.removeTransaction(req.params.id));
 }));
