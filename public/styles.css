@@ -51,7 +51,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; }
+html, body { margin: 0; overflow-x: hidden; }
 /* スクロールバーを非表示に（見た目をすっきりさせる。スクロール自体はできる） */
 html { scrollbar-width: none; -ms-overflow-style: none; }
 html::-webkit-scrollbar { display: none; width: 0; height: 0; }
@@ -359,7 +359,7 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .icon-btn.danger:hover { color: var(--red); background: rgba(239,68,68,.10); }
 
 input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="url"], select, textarea {
-  width: 100%; font: inherit; font-size: 14px; color: var(--ink);
+  width: 100%; min-width: 0; max-width: 100%; font: inherit; font-size: 14px; color: var(--ink);
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
   padding: 10px 13px; outline: none; transition: border-color .2s;
 }
@@ -511,11 +511,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .overlay {
   position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
   background: rgba(10, 14, 22, .45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
-  padding: 18px; animation: fade .2s ease;
+  padding: 18px; animation: fade .2s ease; overflow: hidden;
 }
 @keyframes fade { from { opacity: 0; } }
 .modal {
-  width: min(94vw, 460px); max-height: 86vh; overflow-y: auto;
+  width: min(94vw, 460px); max-height: 86vh; overflow-y: auto; overflow-x: hidden;
   border-radius: 20px; padding: 22px; box-shadow: var(--shadow-lg);
   animation: fadeUp .25s ease; background: var(--surface); border: 1px solid var(--line);
 }
