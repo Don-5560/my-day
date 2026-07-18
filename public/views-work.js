@@ -536,15 +536,17 @@ function moneyTxListHTML(txs, filterDay) {
   }).join("");
 }
 // 新しいカテゴリーを名前+アイコン付きで追加するモーダル。{name, icon} を返す（キャンセルはnull）
-async function categoryModal() {
-  const draft = { name: "", icon: CAT_ICON_CHOICES[0] };
-  for (;;) {
+// アイコンをタップしてもモーダルを作り直さず、選択枠の付け替えだけ行う（チカチカ防止）
+function categoryModal() {
+  const draft = { icon: CAT_ICON_CHOICES[0] };
+  return new Promise((resolve) => {
     const wrap = $("#modalWrap");
+    const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
     wrap.innerHTML = `<div class="overlay"><div class="modal">
       <div class="modal-head"><h3>カテゴリーを追加</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
       <form id="cform">
         <label class="f-label">名前</label>
-        <input type="text" name="name" value="${esc(draft.name)}" placeholder="例）交際費">
+        <input type="text" name="name" placeholder="例）交際費">
         <label class="f-label">アイコン</label>
         <div class="cat-grid">${CAT_ICON_CHOICES.map((ic) => `<button type="button" class="cat-tile ${draft.icon === ic ? "active" : ""}" data-icon="${ic}">${icon(ic, 20)}</button>`).join("")}</div>
         <div class="modal-foot">
@@ -554,29 +556,29 @@ async function categoryModal() {
       </form>
     </div></div>`;
     document.body.classList.add("modal-open");
-    const result = await new Promise((resolve) => {
-      wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) resolve({ __cancel: true }); });
-      $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => resolve({ __cancel: true })));
-      $$("[data-icon]", wrap).forEach((b) => b.addEventListener("click", () => {
-        draft.name = wrap.querySelector('input[name=name]').value;
-        draft.icon = b.dataset.icon;
-        resolve({ __pickIcon: true });
-      }));
-      wrap.querySelector("#cform").addEventListener("submit", (e) => {
-        e.preventDefault();
-        resolve({ name: String(new FormData(e.target).get("name") || "").trim() });
-      });
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
+    $$("[data-icon]", wrap).forEach((b) => b.addEventListener("click", () => {
+      $$("[data-icon]", wrap).forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      draft.icon = b.dataset.icon;
+    }));
+    wrap.querySelector("#cform").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = String(new FormData(e.target).get("name") || "").trim();
+      if (!name) { toast("名前を入力してください", "x"); return; }
+      finish({ name, icon: draft.icon });
     });
-    document.body.classList.remove("modal-open");
-    if (result.__cancel) { wrap.innerHTML = ""; return null; }
-    if (result.__pickIcon) continue;
-    if (!result.name) { toast("名前を入力してください", "x"); draft.name = result.name; continue; }
-    wrap.innerHTML = "";
-    return { name: result.name, icon: draft.icon };
-  }
+  });
 }
-// 収入/支出を追加・編集する統一モーダル。種類の切り替え・日付ナビ・アイコン付きカテゴリー選択をこの中で完結させる
-async function txFormModal(initial = {}) {
+// カテゴリーグリッドのHTML（追加タイル込み）
+const txCatGridHTML = (cats, selected) => cats.map((c) => `<button type="button" class="cat-tile ${selected === c.name ? "active" : ""}" data-cat="${esc(c.name)}">${icon(c.icon, 20)}<span>${esc(c.name)}</span></button>`).join("")
+  + `<button type="button" class="cat-tile cat-tile-add" id="txCatAdd">${icon("plus", 20)}<span>追加</span></button>`;
+
+// 収入/支出を追加・編集する統一モーダル。
+// タブ切替・日付ナビ・カテゴリー選択は、その場でDOMを直接書き換えるだけにして、
+// モーダル全体を毎回作り直さないようにする（作り直すと入場アニメーションが再生されて画面がチカチカする）
+function txFormModal(initial = {}) {
   const isEdit = !!initial.id;
   const draft = {
     kind: initial.type || "expense",
@@ -586,17 +588,20 @@ async function txFormModal(initial = {}) {
     memo: initial.memo || "",
     category: initial.category || "",
   };
-  for (;;) {
+  const cats0 = moneyCatList(draft.kind);
+  if (!draft.category) draft.category = cats0[0]?.name || "";
+
+  return new Promise((resolve) => {
     const wrap = $("#modalWrap");
-    const cats = moneyCatList(draft.kind);
-    if (!draft.category) draft.category = cats[0]?.name || "";
-    const isIncome = draft.kind === "income";
+    const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
+    const isIncome = () => draft.kind === "income";
+
     wrap.innerHTML = `<div class="overlay"><div class="modal">
       <div class="modal-head"><h3>${esc(isEdit ? "取引を編集" : "取引を追加")}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
       <form id="txform">
         <div class="tabs">
-          <button type="button" class="tab ${!isIncome ? "active" : ""}" data-kind="expense" ${isEdit ? "disabled" : ""}>支出</button>
-          <button type="button" class="tab ${isIncome ? "active" : ""}" data-kind="income" ${isEdit ? "disabled" : ""}>収入</button>
+          <button type="button" class="tab ${!isIncome() ? "active" : ""}" data-kind="expense" ${isEdit ? "disabled" : ""}>支出</button>
+          <button type="button" class="tab ${isIncome() ? "active" : ""}" data-kind="income" ${isEdit ? "disabled" : ""}>収入</button>
         </div>
         <label class="f-label">日付</label>
         <div class="f-row2">
@@ -606,73 +611,77 @@ async function txFormModal(initial = {}) {
         </div>
         <label class="f-label">金額（円）</label>
         <input type="number" name="amount" value="${esc(draft.amount)}" placeholder="10000" inputmode="numeric">
-        ${isIncome ? `<label class="f-label">経費（任意・円）</label><input type="number" name="cost" value="${esc(draft.cost)}" placeholder="0" inputmode="numeric">` : ""}
+        <div id="txCostRow" style="${isIncome() ? "" : "display:none"}">
+          <label class="f-label">経費（任意・円）</label>
+          <input type="number" name="cost" value="${esc(draft.cost)}" placeholder="0" inputmode="numeric">
+        </div>
         <label class="f-label">メモ（任意）</label>
         <input type="text" name="memo" value="${esc(draft.memo)}" placeholder="任意">
         <label class="f-label">カテゴリー</label>
-        <div class="cat-grid">
-          ${cats.map((c) => `<button type="button" class="cat-tile ${draft.category === c.name ? "active" : ""}" data-cat="${esc(c.name)}">${icon(c.icon, 20)}<span>${esc(c.name)}</span></button>`).join("")}
-          <button type="button" class="cat-tile cat-tile-add" id="txCatAdd">${icon("plus", 20)}<span>追加</span></button>
-        </div>
+        <div class="cat-grid" id="txCatGrid">${txCatGridHTML(cats0, draft.category)}</div>
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
-          <button type="submit" class="btn" style="${!isIncome ? "background:var(--red);border:none" : ""}">${isIncome ? "収入" : "支出"}を記録</button>
+          <button type="submit" class="btn" id="txSubmit" style="${!isIncome() ? "background:var(--red);border:none" : ""}">${isIncome() ? "収入" : "支出"}を記録</button>
         </div>
       </form>
     </div></div>`;
     document.body.classList.add("modal-open");
-    const captureDraft = () => {
-      draft.date = wrap.querySelector('input[name=date]').value;
-      draft.amount = wrap.querySelector('input[name=amount]').value;
-      draft.cost = wrap.querySelector('input[name=cost]')?.value ?? draft.cost;
-      draft.memo = wrap.querySelector('input[name=memo]').value;
-    };
-    const result = await new Promise((resolve) => {
-      wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) resolve({ __cancel: true }); });
-      $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => resolve({ __cancel: true })));
-      if (isEdit) wrap.querySelector("[data-del]").addEventListener("click", async () => {
-        if (await confirmBox("この取引を削除しますか？")) resolve({ __delete: true });
-      });
-      $$("[data-kind]", wrap).forEach((b) => b.addEventListener("click", () => {
-        if (b.disabled) return;
-        captureDraft();
-        draft.kind = b.dataset.kind;
-        draft.category = "";
-        resolve({ __redraw: true });
+
+    const bindCatGrid = () => {
+      $$("[data-cat]", wrap).forEach((b) => b.addEventListener("click", () => {
+        $$("[data-cat]", wrap).forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        draft.category = b.dataset.cat;
       }));
-      wrap.querySelector("#txDatePrev").addEventListener("click", () => { captureDraft(); draft.date = calAdd(draft.date, -1); resolve({ __redraw: true }); });
-      wrap.querySelector("#txDateNext").addEventListener("click", () => { captureDraft(); draft.date = calAdd(draft.date, 1); resolve({ __redraw: true }); });
-      $$("[data-cat]", wrap).forEach((b) => b.addEventListener("click", () => { captureDraft(); draft.category = b.dataset.cat; resolve({ __redraw: true }); }));
-      wrap.querySelector("#txCatAdd").addEventListener("click", () => { captureDraft(); resolve({ __addCat: true }); });
-      wrap.querySelector("#txform").addEventListener("submit", (e) => {
-        e.preventDefault();
-        const fd = new FormData(e.target);
-        resolve({
-          date: String(fd.get("date") || "").trim(),
-          amount: Number(fd.get("amount")) || 0,
-          cost: Number(fd.get("cost")) || 0,
-          memo: String(fd.get("memo") || "").trim(),
-        });
-      });
-    });
-    document.body.classList.remove("modal-open");
-    if (result.__cancel) { wrap.innerHTML = ""; return null; }
-    if (result.__delete) { wrap.innerHTML = ""; return { __delete: true }; }
-    if (result.__redraw) continue;
-    if (result.__addCat) {
-      const nv = await categoryModal();
-      if (nv) {
+      $("#txCatAdd", wrap).addEventListener("click", async () => {
+        const nv = await categoryModal();
+        if (!nv) return;
         DB.categories[draft.kind] = [...(DB.categories[draft.kind] || []), nv];
         try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); }
         draft.category = nv.name;
-      }
-      continue;
-    }
-    if (!result.amount) { toast("金額を入力してください", "x"); Object.assign(draft, result); continue; }
-    wrap.innerHTML = "";
-    return { type: draft.kind, date: result.date || todayStr(), amount: result.amount, cost: result.cost, memo: result.memo, category: draft.category };
-  }
+        $("#txCatGrid", wrap).innerHTML = txCatGridHTML(moneyCatList(draft.kind), draft.category);
+        bindCatGrid();
+      });
+    };
+    bindCatGrid();
+
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
+    if (isEdit) wrap.querySelector("[data-del]").addEventListener("click", async () => {
+      if (await confirmBox("この取引を削除しますか？")) finish({ __delete: true });
+    });
+    $$("[data-kind]", wrap).forEach((b) => b.addEventListener("click", () => {
+      if (b.disabled || b.classList.contains("active")) return;
+      $$("[data-kind]", wrap).forEach((x) => x.classList.toggle("active", x === b));
+      draft.kind = b.dataset.kind;
+      const cats = moneyCatList(draft.kind);
+      draft.category = cats[0]?.name || "";
+      $("#txCostRow", wrap).style.display = isIncome() ? "" : "none";
+      $("#txCatGrid", wrap).innerHTML = txCatGridHTML(cats, draft.category);
+      bindCatGrid();
+      const submit = $("#txSubmit", wrap);
+      submit.textContent = isIncome() ? "収入を記録" : "支出を記録";
+      submit.style.background = isIncome() ? "" : "var(--red)";
+      submit.style.border = isIncome() ? "" : "none";
+    }));
+    $("#txDatePrev", wrap).addEventListener("click", () => { $("input[name=date]", wrap).value = calAdd($("input[name=date]", wrap).value, -1); });
+    $("#txDateNext", wrap).addEventListener("click", () => { $("input[name=date]", wrap).value = calAdd($("input[name=date]", wrap).value, 1); });
+    wrap.querySelector("#txform").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const amount = Number(fd.get("amount")) || 0;
+      if (!amount) { toast("金額を入力してください", "x"); return; }
+      finish({
+        type: draft.kind,
+        date: String(fd.get("date") || "").trim() || todayStr(),
+        amount,
+        cost: Number(fd.get("cost")) || 0,
+        memo: String(fd.get("memo") || "").trim(),
+        category: draft.category,
+      });
+    });
+  });
 }
 
 VIEWS.money = {
