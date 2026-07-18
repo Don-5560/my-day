@@ -485,11 +485,14 @@ function moneyCalGridHTML(mk, txs) {
   const first = new Date(y, m - 1, 1);
   const gs = new Date(first); gs.setDate(1 - first.getDay());
   const from = isoOf(gs);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  // 月の最終日を含む週までで止める（翌月の日付だけになる行は出さない。5行の月も6行の月もそのまま）
+  const totalCells = Math.ceil((first.getDay() + daysInMonth) / 7) * 7;
   const byDate = {};
   for (const t of txs) { (byDate[t.date] ||= { income: 0, expense: 0 })[t.type] += t.amount; }
   const today = todayStr();
   let cells = "";
-  for (let i = 0; i < 42; i++) {
+  for (let i = 0; i < totalCells; i++) {
     const iso = calAdd(from, i);
     const d = new Date(iso + "T00:00:00");
     const other = d.getMonth() !== m - 1;
@@ -611,6 +614,10 @@ VIEWS.money = {
       </div>
       ${MONEY_TAB === "actual" ? `
       <div class="card" style="margin-bottom:18px">
+        <h2>${icon("wallet", 15)} 残高</h2>
+        <p style="margin:4px 0 0;font-size:28px;font-weight:800">${signedYen(fin.currentBalance)}</p>
+      </div>
+      <div class="card" style="margin-bottom:18px">
         <div class="cal-nav" style="margin-bottom:10px">
           <button class="icon-btn" id="mcalPrev">${icon("chevR", 16, "flip")}</button>
           <button class="btn ghost sm" id="mcalToday">今月</button>
@@ -619,11 +626,12 @@ VIEWS.money = {
         </div>
         ${moneyCalGridHTML(mk, txs)}
       </div>
-      <div class="stat-grid">
-        ${statCard("wallet", signedYen(fin.currentBalance), "現在の残高")}
-        ${statCard("chart", fmtYen(fin.incomeThisMonth), "収入")}
-        ${statCard("chart", fmtYen(fin.expenseThisMonth), "支出")}
-        ${statCard(fin.netThisMonth >= 0 ? "trophy" : "clock", signedYen(fin.netThisMonth), "収支")}
+      <div class="card" style="margin-bottom:18px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--green)">${fmtYen(fin.incomeThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--red)">${fmtYen(fin.expenseThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:16.5px;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--ink)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
+        </div>
       </div>
       <div class="grid2">
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
