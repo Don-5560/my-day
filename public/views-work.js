@@ -610,9 +610,15 @@ VIEWS.money = {
       </div>
       <div class="tabs" style="margin-bottom:16px">
         <button class="tab ${MONEY_TAB === "actual" ? "active" : ""}" data-mtab="actual">収支</button>
+        <button class="tab ${MONEY_TAB === "breakdown" ? "active" : ""}" data-mtab="breakdown">内訳</button>
         <button class="tab ${MONEY_TAB === "plan" ? "active" : ""}" data-mtab="plan">予想収支</button>
       </div>
-      ${MONEY_TAB === "actual" ? `
+      ${MONEY_TAB === "breakdown" ? `
+      <p class="small" style="color:var(--muted);margin:-8px 0 16px">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月の内訳です。月を変えたい場合は「収支」タブで移動してください。</p>
+      <div class="grid2">
+        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
+        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
+      </div>` : MONEY_TAB === "actual" ? `
       <div class="card" style="margin-bottom:18px">
         <h2>${icon("wallet", 15)} 残高</h2>
         <p style="margin:4px 0 0;font-size:28px;font-weight:800">${signedYen(fin.currentBalance)}</p>
@@ -632,10 +638,6 @@ VIEWS.money = {
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--red)">${fmtYen(fin.expenseThisMonth)}</p></div>
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:16.5px;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--ink)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
         </div>
-      </div>
-      <div class="grid2">
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
       </div>
       <div class="card" style="margin-top:18px">
         <h2>${icon("calendar", 15)} 取引${MONEY_CAL_DAY ? `（${fmtDateFull(MONEY_CAL_DAY)}）` : ""}</h2>
