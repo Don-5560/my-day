@@ -216,16 +216,19 @@ app.post("/api/tasks", wrap(async (req, res) => {
 
 // タスクの更新: 完了トグル(done) / 項目編集(title,cat,tags,time,endTime,spentMin) / 所要時間加算(addMin)
 app.patch("/api/tasks/:id", wrap(async (req, res) => {
-  const { date = store.today(), done, title, cat, tags, time, endTime, memo, addMin, spentMin, moveTo } = req.body;
+  const { date = store.today(), done, title, cat, tags, time, endTime, memo, addMin, spentMin, moveTo, important } = req.body;
   const { id } = req.params;
   let day;
   if (typeof addMin === "number") day = (await store.addTaskTime(date, id, addMin)).day;
-  else if (typeof done === "boolean") day = (await store.setTaskDone(date, id, done)).day;
-  else if (moveTo && moveTo !== date) {
+  else if (typeof done === "boolean") {
+    day = (await store.setTaskDone(date, id, done)).day;
+    // done とセットで important が送られてきた場合も取りこぼさないようにする
+    if (typeof important === "boolean") day = (await store.updateTask(date, id, { important })).day;
+  } else if (moveTo && moveTo !== date) {
     // 項目を反映してから別の日へ移動する
-    await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin });
+    await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin, important });
     day = (await store.moveTask(date, id, moveTo)).day;
-  } else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin })).day;
+  } else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin, important })).day;
   res.json(day);
 }));
 

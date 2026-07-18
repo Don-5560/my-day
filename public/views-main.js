@@ -75,7 +75,7 @@ function schedItemHTML(t, isToday) {
     </div>
     <input type="checkbox" class="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
     <div class="li-body" data-open="${t.id}" role="button" tabindex="0">
-      <div class="li-title">${esc(t.title)}</div>
+      <div class="li-title">${t.important ? `<span style="color:var(--amber)">${icon("star", 13, "filled")}</span> ` : ""}${esc(t.title)}</div>
       ${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
       ${badges ? `<div class="li-tags">${badges}</div>` : ""}
     </div>
@@ -110,6 +110,9 @@ function taskDetailModal(t, opts = {}) {
         ${rows.map(([k, v]) => `<div class="td-row"><span class="td-k">${esc(k)}</span><span class="td-v">${v}</span></div>`).join("")}
         ${t.memo ? `<div class="td-memo">${esc(t.memo)}</div>` : ""}
       </div>
+      <button type="button" class="btn ghost sm" data-act="mit" style="width:100%;margin-top:4px;${t.important ? "color:var(--amber);border-color:var(--amber)" : ""}">
+        ${icon("star", 14, t.important ? "filled" : "")} ${t.important ? "今日の最重要タスクを解除" : "今日の最重要タスクにする"}
+      </button>
       <div class="modal-foot" style="justify-content:space-between">
         <button type="button" class="btn ghost sm" data-act="delete" style="color:var(--red)">${icon("trash", 14)} 削除</button>
         ${opts.canToggle ? `<button type="button" class="btn sm" data-act="toggle">${t.done ? "未完了に戻す" : "完了にする"}</button>` : `<button type="button" class="btn sm" data-x>閉じる</button>`}
@@ -438,7 +441,11 @@ VIEWS.home = {
           if (isToday) DB.day = d; else SCHED_CACHE[date] = d;
         } catch (err) { cb.checked = !cb.checked; row.classList.toggle("done", cb.checked); toast(err.message, "x"); return; }
         refreshSummary();
-        if (cb.checked) { await addXP(XP_RULES.task, "タスク完了"); await askSpentTime(date, cb.dataset.task); }
+        if (cb.checked) {
+          await addXP(XP_RULES.task, "タスク完了");
+          if (day.tasks.find((x) => x.id === cb.dataset.task)?.important) await addXP(XP_RULES.mitBonus, "最重要タスク達成！");
+          await askSpentTime(date, cb.dataset.task);
+        }
       }));
       // タイマー（今日のみボタンあり）
       $$("#schedule [data-play]", card).forEach((b) => b.addEventListener("click", (e) => {
@@ -454,6 +461,11 @@ VIEWS.home = {
           const act = await taskDetailModal(t);
           if (act === "edit") await editTask(date, t);
           else if (act === "delete") await deleteTask(date, t);
+          else if (act === "mit") {
+            try { await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ date, important: !t.important }) }); }
+            catch (err) { toast(err.message, "x"); return; }
+            await reloadSchedDay(date);
+          }
         };
         el.addEventListener("click", open);
         el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });

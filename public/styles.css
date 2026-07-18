@@ -650,6 +650,7 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 /* ===== カレンダー ===== */
 
 .ic.flip { transform: rotate(180deg); }
+.ic.filled { fill: currentColor; }
 
 .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .cal-nav { display: flex; align-items: center; gap: 6px; }
@@ -670,6 +671,7 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .cal-cell .cc-num { font-size: 12.5px; font-weight: 700; line-height: 1; }
 .cal-cell .cc-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: auto; }
 .cal-cell .cc-count { position: absolute; right: 5px; bottom: 4px; font-size: 9.5px; color: var(--muted); font-weight: 600; }
+.cal-cell .cc-star { position: absolute; top: 4px; right: 5px; color: var(--amber); }
 /* 収支カレンダー: 1日ごとの収入/支出を小さく表示するセル */
 .money-cell { aspect-ratio: auto; min-height: 56px; gap: 1px; }
 .money-cell.selected { border-color: var(--accent); background: var(--accent-soft); }

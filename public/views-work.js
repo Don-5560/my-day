@@ -1191,10 +1191,12 @@ function calRenderMonth(el) {
     const iso = calAdd(from, i), d = new Date(iso + "T00:00:00"), day = map[iso];
     const done = day ? day.tasks.filter((t) => t.done).length : 0;
     const total = day ? day.tasks.length : 0;
+    const hasMit = day ? day.tasks.some((t) => t.important) : false;
     const lv = calLevel(calXp(iso));
     const cls = ["cal-cell", d.getMonth() !== anchorMonth ? "other" : "", iso === today ? "today" : ""].join(" ");
     cells += `<button class="${cls}" data-day="${iso}">
       <span class="cc-num">${d.getDate()}</span>
+      ${hasMit ? `<span class="cc-star">${icon("star", 11, "filled")}</span>` : ""}
       ${lv ? `<span class="cc-dot hm-${lv}"></span>` : ""}
       ${total ? `<span class="cc-count">${done}/${total}</span>` : ""}
     </button>`;
@@ -1261,7 +1263,7 @@ function calShowDetail(iso) {
       <input type="checkbox" class="checkbox" data-cdchk="${t.id}" ${t.done ? "checked" : ""}>
       ${t.time ? `<span class="li-time">${esc(t.time)}</span>` : ""}
       <div class="li-body" data-cdopen="${t.id}" role="button" tabindex="0" style="cursor:pointer">
-        <div class="li-title">${esc(t.title)}</div>${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
+        <div class="li-title">${t.important ? `<span style="color:var(--amber)">${icon("star", 13, "filled")}</span> ` : ""}${esc(t.title)}</div>${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
       </div>
       ${t.spentMin ? `<span class="pill grn">${icon("timer", 10)} ${fmtHM(t.spentMin)}</span>` : ""}
     </div>`).join("") || '<p class="empty">この日のタスクはありません</p>'}</div>
@@ -1312,14 +1314,21 @@ function calShowDetail(iso) {
   const toggleCalTask = async (t) => {
     try {
       const d = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ date: iso, done: !t.done }) });
-      if (!t.done) await addXP(XP_RULES.task, "タスク完了");
+      if (!t.done) {
+        await addXP(XP_RULES.task, "タスク完了");
+        if (t.important) await addXP(XP_RULES.mitBonus, "最重要タスク達成！");
+      }
       refresh(d);
     } catch (err) { toast(err.message, "x"); }
   };
   $$("#calDetailTasks [data-cdchk]").forEach((cb) => cb.addEventListener("change", async () => {
     try {
       const d = await api("/api/tasks/" + cb.dataset.cdchk, { method: "PATCH", body: JSON.stringify({ date: iso, done: cb.checked }) });
-      if (cb.checked) await addXP(XP_RULES.task, "タスク完了");
+      if (cb.checked) {
+        await addXP(XP_RULES.task, "タスク完了");
+        const t = (CAL._map[iso]?.tasks || []).find((x) => x.id === cb.dataset.cdchk);
+        if (t?.important) await addXP(XP_RULES.mitBonus, "最重要タスク達成！");
+      }
       refresh(d);
     } catch (err) { cb.checked = !cb.checked; toast(err.message, "x"); }
   }));
@@ -1331,6 +1340,10 @@ function calShowDetail(iso) {
       if (act === "edit") await editCalTask(t);
       else if (act === "delete") await deleteCalTask(t);
       else if (act === "toggle") await toggleCalTask(t);
+      else if (act === "mit") {
+        try { const d = await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ date: iso, important: !t.important }) }); refresh(d); }
+        catch (err) { toast(err.message, "x"); }
+      }
     };
     el2.addEventListener("click", openIt);
     el2.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openIt(); } });

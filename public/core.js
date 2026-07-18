@@ -104,7 +104,7 @@ async function refreshSales() { DB.sales = (await api("/api/data/sales")) ?? { l
 
 // ===== XP・レベル =====
 
-const XP_RULES = { task: 10, todoHigh: 20, todoMid: 10, todoLow: 5, habit: 5, diary: 15, project: 200, paid: 300, badge: 50 };
+const XP_RULES = { task: 10, todoHigh: 20, todoMid: 10, todoLow: 5, habit: 5, diary: 15, project: 200, paid: 300, badge: 50, mitBonus: 15 };
 
 const xpTotal = () => DB.xp.events.reduce((s, e) => s + e.amt, 0);
 
