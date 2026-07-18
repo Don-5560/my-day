@@ -9,7 +9,7 @@ const NAV_GROUPS = [
   { label: "グロース", items: ["goals", "badges", "analytics", "calendar"] },
   { label: "", items: ["settings"] },
 ];
-const BOTTOM_NAV = ["calendar", "todo", "home", "habits", "menu"];
+const BOTTOM_NAV = ["calendar", "todo", "home", "money", "menu"];
 // 右ドロワーの構成（モバイルの「メニュー」から開く）
 const DRAWER_GROUPS = [
   { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
