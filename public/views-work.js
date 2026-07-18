@@ -356,8 +356,13 @@ VIEWS.sales = {
 // ===== お金（残高・収入・支出） =====
 // 取引はサーバーのSQLテーブル。docではないので描画時にAPIから取得する。
 
-const TX_INCOME_CATS = ["Web制作", "Uber", "その他"];
-const TX_EXPENSE_CATS = ["生活費", "事業経費", "ツール代", "その他"];
+const TX_INCOME_CATS = [{ name: "Web制作", icon: "layers" }, { name: "Uber", icon: "send" }, { name: "その他", icon: "grid" }];
+const TX_EXPENSE_CATS = [{ name: "生活費", icon: "home" }, { name: "事業経費", icon: "briefcase" }, { name: "ツール代", icon: "settings" }, { name: "その他", icon: "grid" }];
+// カテゴリーに付けられるアイコンの候補（自分で追加するときに選べる）
+const CAT_ICON_CHOICES = ["home", "briefcase", "send", "yen", "wallet", "layers", "book", "target", "trophy", "chart", "calendar", "settings", "grid", "zap", "flame", "timer", "file", "download", "link", "external"];
+// 保存済みのカテゴリーは {name, icon} のはずだが、古い形式（文字列だけ）が残っていても動くようにする
+const normCat = (c) => (typeof c === "string" ? { name: c, icon: "grid" } : c);
+const moneyCatList = (kind) => [...(kind === "income" ? TX_INCOME_CATS : TX_EXPENSE_CATS), ...(DB.categories[kind] || []).map(normCat)];
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
@@ -530,16 +535,144 @@ function moneyTxListHTML(txs, filterDay) {
     </div>`;
   }).join("");
 }
-// 取引の編集モーダル（削除もこの中から）
-function transactionModal(t) {
-  const cats = t.type === "income" ? [...TX_INCOME_CATS, ...(DB.categories.income || [])] : [...TX_EXPENSE_CATS, ...(DB.categories.expense || [])];
-  const fields = [
-    { key: "date", label: "日付", type: "date" },
-    { key: "amount", label: "金額（円）", type: "money" },
-    { key: "category", label: t.type === "income" ? "収入源" : "カテゴリ", type: "select", options: cats },
-    { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
-  ];
-  return modalWithCatAdd(t.type === "income" ? "収入を編集" : "支出を編集", fields, t, "category", t.type, { onDelete: "この取引を削除しますか？" });
+// 新しいカテゴリーを名前+アイコン付きで追加するモーダル。{name, icon} を返す（キャンセルはnull）
+async function categoryModal() {
+  const draft = { name: "", icon: CAT_ICON_CHOICES[0] };
+  for (;;) {
+    const wrap = $("#modalWrap");
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head"><h3>カテゴリーを追加</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <form id="cform">
+        <label class="f-label">名前</label>
+        <input type="text" name="name" value="${esc(draft.name)}" placeholder="例）交際費">
+        <label class="f-label">アイコン</label>
+        <div class="cat-grid">${CAT_ICON_CHOICES.map((ic) => `<button type="button" class="cat-tile ${draft.icon === ic ? "active" : ""}" data-icon="${ic}">${icon(ic, 20)}</button>`).join("")}</div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-x>キャンセル</button>
+          <button type="submit" class="btn">${icon("checkline", 15)} 追加</button>
+        </div>
+      </form>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+    const result = await new Promise((resolve) => {
+      wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) resolve({ __cancel: true }); });
+      $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => resolve({ __cancel: true })));
+      $$("[data-icon]", wrap).forEach((b) => b.addEventListener("click", () => {
+        draft.name = wrap.querySelector('input[name=name]').value;
+        draft.icon = b.dataset.icon;
+        resolve({ __pickIcon: true });
+      }));
+      wrap.querySelector("#cform").addEventListener("submit", (e) => {
+        e.preventDefault();
+        resolve({ name: String(new FormData(e.target).get("name") || "").trim() });
+      });
+    });
+    document.body.classList.remove("modal-open");
+    if (result.__cancel) { wrap.innerHTML = ""; return null; }
+    if (result.__pickIcon) continue;
+    if (!result.name) { toast("名前を入力してください", "x"); draft.name = result.name; continue; }
+    wrap.innerHTML = "";
+    return { name: result.name, icon: draft.icon };
+  }
+}
+// 収入/支出を追加・編集する統一モーダル。種類の切り替え・日付ナビ・アイコン付きカテゴリー選択をこの中で完結させる
+async function txFormModal(initial = {}) {
+  const isEdit = !!initial.id;
+  const draft = {
+    kind: initial.type || "expense",
+    date: initial.date || todayStr(),
+    amount: initial.amount ?? "",
+    cost: initial.cost ?? "",
+    memo: initial.memo || "",
+    category: initial.category || "",
+  };
+  for (;;) {
+    const wrap = $("#modalWrap");
+    const cats = moneyCatList(draft.kind);
+    if (!draft.category) draft.category = cats[0]?.name || "";
+    const isIncome = draft.kind === "income";
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head"><h3>${esc(isEdit ? "取引を編集" : "取引を追加")}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <form id="txform">
+        <div class="tabs">
+          <button type="button" class="tab ${!isIncome ? "active" : ""}" data-kind="expense" ${isEdit ? "disabled" : ""}>支出</button>
+          <button type="button" class="tab ${isIncome ? "active" : ""}" data-kind="income" ${isEdit ? "disabled" : ""}>収入</button>
+        </div>
+        <label class="f-label">日付</label>
+        <div class="f-row2">
+          <button type="button" class="icon-btn" id="txDatePrev">${icon("chevR", 16, "flip")}</button>
+          <input type="date" name="date" value="${esc(draft.date)}" style="flex:1">
+          <button type="button" class="icon-btn" id="txDateNext">${icon("chevR", 16)}</button>
+        </div>
+        <label class="f-label">金額（円）</label>
+        <input type="number" name="amount" value="${esc(draft.amount)}" placeholder="10000" inputmode="numeric">
+        ${isIncome ? `<label class="f-label">経費（任意・円）</label><input type="number" name="cost" value="${esc(draft.cost)}" placeholder="0" inputmode="numeric">` : ""}
+        <label class="f-label">メモ（任意）</label>
+        <input type="text" name="memo" value="${esc(draft.memo)}" placeholder="任意">
+        <label class="f-label">カテゴリー</label>
+        <div class="cat-grid">
+          ${cats.map((c) => `<button type="button" class="cat-tile ${draft.category === c.name ? "active" : ""}" data-cat="${esc(c.name)}">${icon(c.icon, 20)}<span>${esc(c.name)}</span></button>`).join("")}
+          <button type="button" class="cat-tile cat-tile-add" id="txCatAdd">${icon("plus", 20)}<span>追加</span></button>
+        </div>
+        <div class="modal-foot">
+          ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
+          <button type="button" class="btn ghost" data-x>キャンセル</button>
+          <button type="submit" class="btn" style="${!isIncome ? "background:var(--red);border:none" : ""}">${isIncome ? "収入" : "支出"}を記録</button>
+        </div>
+      </form>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+    const captureDraft = () => {
+      draft.date = wrap.querySelector('input[name=date]').value;
+      draft.amount = wrap.querySelector('input[name=amount]').value;
+      draft.cost = wrap.querySelector('input[name=cost]')?.value ?? draft.cost;
+      draft.memo = wrap.querySelector('input[name=memo]').value;
+    };
+    const result = await new Promise((resolve) => {
+      wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) resolve({ __cancel: true }); });
+      $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => resolve({ __cancel: true })));
+      if (isEdit) wrap.querySelector("[data-del]").addEventListener("click", async () => {
+        if (await confirmBox("この取引を削除しますか？")) resolve({ __delete: true });
+      });
+      $$("[data-kind]", wrap).forEach((b) => b.addEventListener("click", () => {
+        if (b.disabled) return;
+        captureDraft();
+        draft.kind = b.dataset.kind;
+        draft.category = "";
+        resolve({ __redraw: true });
+      }));
+      wrap.querySelector("#txDatePrev").addEventListener("click", () => { captureDraft(); draft.date = calAdd(draft.date, -1); resolve({ __redraw: true }); });
+      wrap.querySelector("#txDateNext").addEventListener("click", () => { captureDraft(); draft.date = calAdd(draft.date, 1); resolve({ __redraw: true }); });
+      $$("[data-cat]", wrap).forEach((b) => b.addEventListener("click", () => { captureDraft(); draft.category = b.dataset.cat; resolve({ __redraw: true }); }));
+      wrap.querySelector("#txCatAdd").addEventListener("click", () => { captureDraft(); resolve({ __addCat: true }); });
+      wrap.querySelector("#txform").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        resolve({
+          date: String(fd.get("date") || "").trim(),
+          amount: Number(fd.get("amount")) || 0,
+          cost: Number(fd.get("cost")) || 0,
+          memo: String(fd.get("memo") || "").trim(),
+        });
+      });
+    });
+    document.body.classList.remove("modal-open");
+    if (result.__cancel) { wrap.innerHTML = ""; return null; }
+    if (result.__delete) { wrap.innerHTML = ""; return { __delete: true }; }
+    if (result.__redraw) continue;
+    if (result.__addCat) {
+      const nv = await categoryModal();
+      if (nv) {
+        DB.categories[draft.kind] = [...(DB.categories[draft.kind] || []), nv];
+        try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); }
+        draft.category = nv.name;
+      }
+      continue;
+    }
+    if (!result.amount) { toast("金額を入力してください", "x"); Object.assign(draft, result); continue; }
+    wrap.innerHTML = "";
+    return { type: draft.kind, date: result.date || todayStr(), amount: result.amount, cost: result.cost, memo: result.memo, category: draft.category };
+  }
 }
 
 VIEWS.money = {
@@ -604,8 +737,7 @@ VIEWS.money = {
         <div><p class="eyebrow">収支管理</p><h1>収支</h1></div>
         ${MONEY_TAB === "actual" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="setInit">${icon("wallet", 15)} 初期残高</button>
-          <button class="btn" id="addIncome">${icon("plus", 15)} 収入</button>
-          <button class="btn" id="addExpense" style="background:var(--red);border:none">${icon("plus", 15)} 支出</button>
+          <button class="btn" id="addTx">${icon("plus", 15)} 記録</button>
         </div>` : ""}
       </div>
       <div class="tabs" style="margin-bottom:16px">
@@ -728,7 +860,7 @@ VIEWS.money = {
       const open = async () => {
         const t = txs.find((x) => x.id === el.dataset.txOpen);
         if (!t) return;
-        const v = await transactionModal(t);
+        const v = await txFormModal(t);
         if (!v) return;
         try {
           if (v.__delete) {
@@ -747,42 +879,27 @@ VIEWS.money = {
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
     });
 
-    const addTx = async (type, cats) => {
-      // 収入は売上ページと同じ項目（金額・経費・収入源・メモ）に揃える
-      const fields = type === "income" ? [
-        { key: "date", label: "日付", type: "date", default: todayStr() },
-        { key: "amount", label: "収入金額（円）", type: "money", placeholder: "50000" },
-        { key: "cost", label: "経費（任意・円）", type: "money", placeholder: "0" },
-        { key: "category", label: "収入源", type: "select", options: cats },
-        { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
-      ] : [
-        { key: "date", label: "日付", type: "date", default: todayStr() },
-        { key: "amount", label: "金額（円）", type: "money", placeholder: "10000" },
-        { key: "category", label: "カテゴリ", type: "select", options: cats },
-        { key: "memo", label: "メモ", type: "text", placeholder: "任意" },
-      ];
-      const v = await modalWithCatAdd(type === "income" ? "収入を追加" : "支出を追加", fields, {}, "category", type);
-      if (!v || !v.amount) return;
+    $("#addTx").addEventListener("click", async () => {
+      const v = await txFormModal({});
+      if (!v) return;
       try {
-        if (type === "income") {
+        if (v.type === "income") {
           // 収入(売上)＋任意の経費を記録。残高に反映＆売上明細にミラー、利益も計算できる。
           await api("/api/sales", {
             method: "POST",
-            body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.category, date: v.date || todayStr(), memo: v.memo }),
+            body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.category, date: v.date, memo: v.memo }),
           });
           await refreshSales(); // 売上明細にもミラーされるので反映
         } else {
           await api("/api/transactions", {
             method: "POST",
-            body: JSON.stringify({ type, amount: Math.round(v.amount), category: v.category, date: v.date || todayStr(), memo: v.memo }),
+            body: JSON.stringify({ type: v.type, amount: Math.round(v.amount), category: v.category, date: v.date, memo: v.memo }),
           });
         }
       } catch (e) { toast(e.message, "x"); return; }
-      toast(type === "income" ? "収入を記録しました" : "支出を記録しました");
+      toast(v.type === "income" ? "収入を記録しました" : "支出を記録しました");
       rerender();
-    };
-    $("#addIncome").addEventListener("click", () => addTx("income", [...TX_INCOME_CATS, ...(DB.categories.income || [])]));
-    $("#addExpense").addEventListener("click", () => addTx("expense", [...TX_EXPENSE_CATS, ...(DB.categories.expense || [])]));
+    });
     $("#setInit").addEventListener("click", async () => {
       const v = await modal("初期残高を設定", [
         { key: "amount", label: "初期残高（円）", type: "money", default: fin.initialBalance, placeholder: "100000" },

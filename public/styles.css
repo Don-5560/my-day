@@ -363,6 +363,16 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
   color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
 }
 .wd-chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+/* 収支のカテゴリー選択（アイコン付きグリッド） */
+.cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+.cat-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.cat-tile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.cat-tile.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cat-tile-add { color: var(--accent); }
 
 /* タスク詳細モーダルの情報表示 */
 .td-info { margin-top: 6px; }
@@ -559,6 +569,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   border-radius: 999px; cursor: pointer; transition: all .18s;
 }
 .tab.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+.tab:disabled { opacity: .5; cursor: default; }
 
 /* ===== モーダル・トースト ===== */
 
