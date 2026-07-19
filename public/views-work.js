@@ -776,6 +776,7 @@ function employerListHTML(items, pendingMap) {
     return `<div class="card" data-emp-open="${e.id}" role="button" tabindex="0" style="cursor:pointer;margin-bottom:12px">
       <h2>${icon("briefcase", 15)} ${esc(e.name)}</h2>
       <p class="small" style="color:var(--muted);margin:2px 0 0">${esc(wage)}・${esc(cycle)}</p>
+      ${e.linkedCategory ? `<p class="small" style="color:var(--muted);margin:4px 0 0">${icon("link", 12)} 収入カテゴリー「${esc(e.linkedCategory)}」と連動</p>` : ""}
       ${p ? `<div class="f-row2" style="margin-top:10px;gap:16px">
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">未収合計</p><p style="margin:0;font-weight:800">${fmtYen(p.total)}</p></div>
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">次回入金日</p><p style="margin:0;font-weight:800">${fmtDateFull(p.nextPayoutDate)}</p></div>
@@ -791,6 +792,7 @@ function employerModal(initial = {}) {
     payCycle: initial.payCycle || "weekly",
     weeklyPayDay: initial.weeklyPayDay || "fri",
   };
+  const incomeCats = moneyCatList("income");
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
     const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
@@ -828,6 +830,12 @@ function employerModal(initial = {}) {
           <button type="button" class="tab ${!isWeekly() ? "active" : ""}" data-cycle="monthly">月払い</button>
         </div>
         <div id="empCycleFields">${cycleFieldsHTML()}</div>
+        <label class="f-label">連動する収入カテゴリー（任意）</label>
+        <select name="linkedCategory">
+          <option value="">連動しない</option>
+          ${incomeCats.map((c) => `<option value="${esc(c.name)}" ${initial.linkedCategory === c.name ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+        </select>
+        <p class="hint" style="margin-top:8px">ここで選んだ収入カテゴリーで記録した収入は、給料日まで「未収」になり、給料日が来たら自動で残高に追加されます。</p>
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
@@ -878,6 +886,7 @@ function employerModal(initial = {}) {
         weeklyPayDay: draft.payCycle === "weekly" ? draft.weeklyPayDay : null,
         closingDay: draft.payCycle === "monthly" ? (Number(fd.get("closingDay")) || 31) : null,
         paymentDay: draft.payCycle === "monthly" ? (Number(fd.get("paymentDay")) || 25) : null,
+        linkedCategory: String(fd.get("linkedCategory") || "").trim() || null,
       });
     });
   });
@@ -1734,10 +1743,17 @@ VIEWS.settings = {
     });
 
     // 勤務先の追加・編集
+    // 同じ収入カテゴリーは1つの勤務先にだけ連動させる（他の勤務先から外す）
+    const dedupLinkedCategory = (catName, keepId) => {
+      if (!catName) return;
+      DB.employers.items.forEach((x) => { if (x.id !== keepId && x.linkedCategory === catName) x.linkedCategory = null; });
+    };
     $("#addEmp").addEventListener("click", async () => {
       const v = await employerModal({});
       if (!v) return;
-      DB.employers.items.push({ id: uid(), ...v });
+      const nu = { id: uid(), ...v };
+      dedupLinkedCategory(nu.linkedCategory, nu.id);
+      DB.employers.items.push(nu);
       await saveDb("employers");
       rerender();
     });
@@ -1751,6 +1767,7 @@ VIEWS.settings = {
           DB.employers.items = DB.employers.items.filter((x) => x.id !== e.id);
         } else {
           Object.assign(e, v);
+          dedupLinkedCategory(e.linkedCategory, e.id);
         }
         await saveDb("employers");
         rerender();
