@@ -356,13 +356,18 @@ VIEWS.sales = {
 // ===== お金（残高・収入・支出） =====
 // 取引はサーバーのSQLテーブル。docではないので描画時にAPIから取得する。
 
-const TX_INCOME_CATS = [{ name: "Web制作", icon: "layers" }, { name: "Uber", icon: "send" }, { name: "その他", icon: "grid" }];
-const TX_EXPENSE_CATS = [{ name: "生活費", icon: "home" }, { name: "事業経費", icon: "briefcase" }, { name: "ツール代", icon: "settings" }, { name: "その他", icon: "grid" }];
+const TX_INCOME_CATS = [{ name: "Web制作", icon: "layers", color: "#3B82F6" }, { name: "Uber", icon: "send", color: "#10B981" }, { name: "その他", icon: "grid", color: "#9AA3B2" }];
+const TX_EXPENSE_CATS = [{ name: "生活費", icon: "home", color: "#3B82F6" }, { name: "事業経費", icon: "briefcase", color: "#8B5CF6" }, { name: "ツール代", icon: "settings", color: "#6B7280" }, { name: "その他", icon: "grid", color: "#9AA3B2" }];
 // カテゴリーに付けられるアイコンの候補（自分で追加するときに選べる）
 const CAT_ICON_CHOICES = ["home", "briefcase", "send", "yen", "wallet", "layers", "book", "target", "trophy", "chart", "calendar", "settings", "grid", "zap", "flame", "timer", "file", "download", "link", "external"];
-// 保存済みのカテゴリーは {name, icon} のはずだが、古い形式（文字列だけ）が残っていても動くようにする
-const normCat = (c) => (typeof c === "string" ? { name: c, icon: "grid" } : c);
+// カテゴリーに付けられる色の候補（プリセット。hex直接入力も可）
+const CAT_COLOR_CHOICES = ["#3B82F6", "#8B5CF6", "#EC4899", "#EF4444", "#F59E0B", "#10B981", "#14B8A6", "#06B6D4", "#6366F1", "#84CC16", "#F97316", "#6B7280"];
+const DEFAULT_CAT_COLOR = "#9AA3B2";
+// 保存済みのカテゴリーは {name, icon, color} のはずだが、古い形式（文字列だけ、colorなし）が残っていても動くようにする
+const normCat = (c) => (typeof c === "string" ? { name: c, icon: "grid", color: DEFAULT_CAT_COLOR } : { color: DEFAULT_CAT_COLOR, ...c });
 const moneyCatList = (kind) => [...(kind === "income" ? TX_INCOME_CATS : TX_EXPENSE_CATS), ...(DB.categories[kind] || []).map(normCat)];
+// 取引の category（文字列）からアイコン・色を引く。見つからない/未分類の取引は既定アイコン＋グレーでフォールバック
+const catMeta = (name, kind) => moneyCatList(kind).find((c) => c.name === name) || { name, icon: "grid", color: DEFAULT_CAT_COLOR };
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
@@ -526,8 +531,9 @@ function moneyTxListHTML(txs, filterDay) {
       <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(net)}</strong></div>
       ${g.items.map((t) => {
         const inc = t.type === "income";
+        const meta = catMeta(t.category, t.type);
         return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
-          <span class="pill" style="background:${inc ? "rgba(52,211,153,.15)" : "rgba(248,113,113,.15)"};color:${inc ? "var(--green)" : "var(--red)"}">${esc(t.category)}</span>
+          <span class="cat-badge" style="background:${meta.color}" title="${esc(meta.name)}" aria-label="${esc(meta.name)}">${icon(meta.icon, 14)}</span>
           <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
           <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
         </div>`;
@@ -538,7 +544,7 @@ function moneyTxListHTML(txs, filterDay) {
 // 新しいカテゴリーを名前+アイコン付きで追加するモーダル。{name, icon} を返す（キャンセルはnull）
 // アイコンをタップしてもモーダルを作り直さず、選択枠の付け替えだけ行う（チカチカ防止）
 function categoryModal() {
-  const draft = { icon: CAT_ICON_CHOICES[0] };
+  const draft = { icon: CAT_ICON_CHOICES[0], color: CAT_COLOR_CHOICES[0] };
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
     const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
@@ -549,6 +555,9 @@ function categoryModal() {
         <input type="text" name="name" placeholder="例）交際費">
         <label class="f-label">アイコン</label>
         <div class="cat-grid">${CAT_ICON_CHOICES.map((ic) => `<button type="button" class="cat-tile ${draft.icon === ic ? "active" : ""}" data-icon="${ic}">${icon(ic, 20)}</button>`).join("")}</div>
+        <label class="f-label">色</label>
+        <div class="color-grid">${CAT_COLOR_CHOICES.map((c) => `<button type="button" class="color-swatch ${draft.color === c ? "active" : ""}" data-color="${c}" style="background:${c}"></button>`).join("")}</div>
+        <input type="text" name="colorHex" value="${esc(draft.color)}" placeholder="#RRGGBB" style="margin-top:8px" maxlength="7">
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-x>キャンセル</button>
           <button type="submit" class="btn">${icon("checkline", 15)} 追加</button>
@@ -563,11 +572,20 @@ function categoryModal() {
       b.classList.add("active");
       draft.icon = b.dataset.icon;
     }));
+    $$("[data-color]", wrap).forEach((b) => b.addEventListener("click", () => {
+      $$("[data-color]", wrap).forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      draft.color = b.dataset.color;
+      wrap.querySelector('input[name=colorHex]').value = draft.color;
+    }));
     wrap.querySelector("#cform").addEventListener("submit", (e) => {
       e.preventDefault();
-      const name = String(new FormData(e.target).get("name") || "").trim();
+      const fd = new FormData(e.target);
+      const name = String(fd.get("name") || "").trim();
       if (!name) { toast("名前を入力してください", "x"); return; }
-      finish({ name, icon: draft.icon });
+      const hex = String(fd.get("colorHex") || "").trim();
+      const color = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : draft.color;
+      finish({ name, icon: draft.icon, color });
     });
   });
 }
