@@ -625,8 +625,8 @@ function categoryModal(kind) {
     });
   });
 }
-// カテゴリーグリッドのHTML（追加タイル込み）
-const txCatGridHTML = (cats, selected) => cats.map((c) => `<button type="button" class="cat-tile ${selected === c.name ? "active" : ""}" data-cat="${esc(c.name)}">${icon(c.icon, 20)}<span>${esc(c.name)}</span></button>`).join("")
+// カテゴリーグリッドのHTML（追加タイル込み）。アイコンは設定した色（線の色）で表示する
+const txCatGridHTML = (cats, selected) => cats.map((c) => `<button type="button" class="cat-tile ${selected === c.name ? "active" : ""}" data-cat="${esc(c.name)}"><span class="cat-tile-ic" style="color:${(normCat(c).color)}">${icon(c.icon, 20)}</span><span>${esc(c.name)}</span></button>`).join("")
   + `<button type="button" class="cat-tile cat-tile-add" id="txCatAdd">${icon("plus", 20)}<span>追加</span></button>`;
 
 // 収入/支出を追加・編集する統一モーダル。
