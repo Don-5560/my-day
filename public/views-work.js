@@ -1086,7 +1086,7 @@ VIEWS.money = {
       </div>
       <div class="card" style="margin-top:18px">
         <h2>${icon("calendar", 15)} 取引${MONEY_CAL_DAY ? `（${fmtDateFull(MONEY_CAL_DAY)}）` : ""}</h2>
-        ${moneyTxListHTML(txs, MONEY_CAL_DAY)}
+        <div id="txListWrap">${moneyTxListHTML(txs, MONEY_CAL_DAY)}</div>
       </div>` : `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">ブロックを自由に追加して、時系列で予想の収支を組み立てられます。内容は保存され、あとから見返せます。</p>
       <div class="card" style="margin-bottom:0">
@@ -1168,35 +1168,42 @@ VIEWS.money = {
       MONEY_CAL_DAY = MONEY_CAL_DAY === b.dataset.mday ? null : b.dataset.mday;
       rerender();
     }));
-    // 給料まとめ行をタップ→内訳の開閉
-    $$("[data-bundle]", main).forEach((el) => el.addEventListener("click", () => {
-      const k = el.dataset.bundle;
-      if (EXPANDED_TX_BUNDLES.has(k)) EXPANDED_TX_BUNDLES.delete(k); else EXPANDED_TX_BUNDLES.add(k);
-      rerender();
-    }));
-    // 取引をタップ→編集（削除もこのモーダルの中から）
-    $$("[data-tx-open]", main).forEach((el) => {
-      const open = async () => {
-        const t = txs.find((x) => x.id === el.dataset.txOpen);
-        if (!t) return;
-        const v = await txFormModal(t);
-        if (!v) return;
-        try {
-          if (v.__delete) {
-            await api("/api/transactions/" + t.id, { method: "DELETE" });
-          } else {
-            await api("/api/transactions/" + t.id, {
-              method: "PATCH",
-              body: JSON.stringify({ date: v.date, category: v.category, amount: Math.round(v.amount), memo: v.memo }),
-            });
-          }
-        } catch (e) { toast(e.message, "x"); return; }
-        if (t.type === "income") await refreshSales(); // 売上明細のミラーにも反映
-        rerender();
-      };
-      el.addEventListener("click", open);
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
-    });
+    // 取引一覧の中の「給料まとめ行の開閉」「取引タップ→編集」をまとめてバインドする。
+    // 開閉はページ全体を作り直さず、一覧部分だけ差し替える（毎回サーバーから再取得してページが
+    // 更新されたように見えるのを防ぐ。編集/削除は金額や残高が変わるので従来通り全体を再描画する）
+    const bindTxListHandlers = () => {
+      const listWrap = $("#txListWrap", main);
+      if (!listWrap) return;
+      $$("[data-bundle]", listWrap).forEach((el) => el.addEventListener("click", () => {
+        const k = el.dataset.bundle;
+        if (EXPANDED_TX_BUNDLES.has(k)) EXPANDED_TX_BUNDLES.delete(k); else EXPANDED_TX_BUNDLES.add(k);
+        listWrap.innerHTML = moneyTxListHTML(txs, MONEY_CAL_DAY);
+        bindTxListHandlers();
+      }));
+      $$("[data-tx-open]", listWrap).forEach((el) => {
+        const open = async () => {
+          const t = txs.find((x) => x.id === el.dataset.txOpen);
+          if (!t) return;
+          const v = await txFormModal(t);
+          if (!v) return;
+          try {
+            if (v.__delete) {
+              await api("/api/transactions/" + t.id, { method: "DELETE" });
+            } else {
+              await api("/api/transactions/" + t.id, {
+                method: "PATCH",
+                body: JSON.stringify({ date: v.date, category: v.category, amount: Math.round(v.amount), memo: v.memo }),
+              });
+            }
+          } catch (e) { toast(e.message, "x"); return; }
+          if (t.type === "income") await refreshSales(); // 売上明細のミラーにも反映
+          rerender();
+        };
+        el.addEventListener("click", open);
+        el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      });
+    };
+    bindTxListHandlers();
 
     $("#addTx").addEventListener("click", async () => {
       const v = await txFormModal({});
