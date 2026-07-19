@@ -719,7 +719,7 @@ function categoryModal(kind, initial = {}) {
 }
 // カテゴリーグリッドのHTML（追加タイル込み）。アイコンは設定した色（線の色）で表示する
 const txCatGridHTML = (cats, selected) => cats.map((c) => `<button type="button" class="cat-tile ${selected === c.name ? "active" : ""}" data-cat="${esc(c.name)}"><span class="cat-tile-ic" style="color:${(normCat(c).color)}">${icon(c.icon, 20)}</span><span>${esc(c.name)}</span></button>`).join("")
-  + `<button type="button" class="cat-tile cat-tile-add" id="txCatAdd">${icon("plus", 20)}<span>追加</span></button>`;
+  + `<button type="button" class="cat-tile cat-tile-add" id="txCatAdd">${icon("plus", 20)}<span>追加・編集</span></button>`;
 
 // 収入/支出を追加・編集する統一モーダル。
 // タブ切替・日付ナビ・カテゴリー選択は、その場でDOMを直接書き換えるだけにして、
@@ -804,12 +804,11 @@ function txFormModal(initial = {}) {
         updateHoursRow();
       }));
       $("#txCatAdd", wrap).addEventListener("click", async () => {
-        const nv = await categoryModal(draft.kind);
-        if (!nv) return;
-        DB.categories[draft.kind] = [...(DB.categories[draft.kind] || []), nv];
-        try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); }
-        draft.category = nv.name;
-        $("#txCatGrid", wrap).innerHTML = txCatGridHTML(moneyCatList(draft.kind), draft.category);
+        await categoryManageModal(draft.kind);
+        // 管理画面で追加/編集/削除/並べ替えがあったかもしれないので、カテゴリー欄を作り直す
+        const cats = moneyCatList(draft.kind);
+        if (!cats.some((c) => c.name === draft.category)) draft.category = cats[0]?.name || "";
+        $("#txCatGrid", wrap).innerHTML = txCatGridHTML(cats, draft.category);
         bindCatGrid();
         updateHoursRow();
       });
@@ -1772,14 +1771,83 @@ function makeSortable(listEl, handleSel, itemSel, onReorder) {
   });
 }
 
-const catRowsHTML = (cats) => cats.length
+const catRowsHTML = (cats, editMode) => cats.length
   ? cats.map((c, i) => `<div class="cat-row" data-idx="${i}" data-name="${esc(c.name)}">
-      ${CAT_EDIT ? `<button type="button" class="cat-del" data-del="${i}" aria-label="削除">${icon("minus", 15)}</button>` : ""}
+      ${editMode ? `<button type="button" class="cat-del" data-del="${i}" aria-label="削除">${icon("minus", 15)}</button>` : ""}
       <span class="cat-tile-ic" style="color:${normCat(c).color}">${icon(c.icon, 22)}</span>
       <span class="cat-row-name">${esc(c.name)}</span>
-      ${CAT_EDIT ? `<span class="cat-handle" data-handle="${i}">${icon("menu", 18)}</span>` : `<span class="cat-chev">${icon("chevR", 16)}</span>`}
+      ${editMode ? `<span class="cat-handle" data-handle="${i}">${icon("menu", 18)}</span>` : `<span class="cat-chev">${icon("chevR", 16)}</span>`}
     </div>`).join("")
   : '<p class="empty">カテゴリーがありません</p>';
+// カテゴリー管理を取引追加モーダルの中からも開けるようにした版（独立オーバーレイ。呼び出し元のモーダルは壊さない）
+function categoryManageModal(initialKind) {
+  let kind = initialKind;
+  let editMode = false;
+  return new Promise((resolve) => {
+    const box = document.createElement("div");
+    const close = () => { box.remove(); resolve(); };
+    const render = () => {
+      const cats = (DB.categories[kind] || []).map(normCat);
+      box.innerHTML = `<div class="overlay"><div class="modal">
+        <div class="modal-head">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button type="button" class="icon-btn" data-back aria-label="戻る">${icon("chevR", 17, "flip")}</button>
+            <h3>カテゴリー</h3>
+          </div>
+          <button type="button" class="btn ghost sm" data-edit-toggle>${editMode ? "完了" : "編集"}</button>
+        </div>
+        <div class="tabs" style="margin-bottom:14px">
+          <button type="button" class="tab ${kind === "expense" ? "active" : ""}" data-cmtab="expense">支出</button>
+          <button type="button" class="tab ${kind === "income" ? "active" : ""}" data-cmtab="income">収入</button>
+        </div>
+        <button type="button" class="btn ghost" data-cat-add style="width:100%;justify-content:flex-start;margin-bottom:14px">${icon("plus", 16)} 新規カテゴリーの追加</button>
+        <div id="cmCatList">${catRowsHTML(cats, editMode)}</div>
+      </div></div>`;
+      box.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(); });
+      box.querySelector("[data-back]").addEventListener("click", close);
+      box.querySelector("[data-edit-toggle]").addEventListener("click", () => { editMode = !editMode; render(); });
+      $$("[data-cmtab]", box).forEach((b) => b.addEventListener("click", () => { kind = b.dataset.cmtab; render(); }));
+      box.querySelector("[data-cat-add]").addEventListener("click", async () => {
+        const v = await categoryModal(kind);
+        if (!v || v.__delete) return;
+        DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) }];
+        try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
+        render();
+      });
+      if (!editMode) {
+        $$(".cat-row", box).forEach((row) => row.addEventListener("click", async () => {
+          const i = Number(row.dataset.idx);
+          const cur = normCat(DB.categories[kind][i]);
+          const v = await categoryModal(kind, cur);
+          if (!v) return;
+          if (v.__delete) DB.categories[kind].splice(i, 1);
+          else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) };
+          try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
+          render();
+        }));
+      } else {
+        $$("[data-del]", box).forEach((b) => b.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const i = Number(b.dataset.del);
+          const name = DB.categories[kind][i]?.name;
+          if (!(await confirmBox(`「${name}」を削除しますか？`))) return;
+          DB.categories[kind].splice(i, 1);
+          try { await saveDb("categories"); } catch (err) { toast(err.message, "x"); return; }
+          render();
+        }));
+        makeSortable(box.querySelector("#cmCatList"), "[data-handle]", ".cat-row", async (from, to) => {
+          const arr = DB.categories[kind];
+          const [moved] = arr.splice(from, 1);
+          arr.splice(to, 0, moved);
+          try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); }
+          render();
+        });
+      }
+    };
+    document.body.appendChild(box);
+    render();
+  });
+}
 
 VIEWS.categories = {
   title: "カテゴリー", icon: "grid",
@@ -1800,7 +1868,7 @@ VIEWS.categories = {
         <button class="tab ${kind === "income" ? "active" : ""}" data-ctab="income">収入</button>
       </div>
       <button class="btn ghost" id="catAdd" style="width:100%;justify-content:flex-start;margin-bottom:14px">${icon("plus", 16)} 新規カテゴリーの追加</button>
-      <div class="card" style="padding:6px 14px"><div id="catList">${catRowsHTML(cats)}</div></div>`;
+      <div class="card" style="padding:6px 14px"><div id="catList">${catRowsHTML(cats, CAT_EDIT)}</div></div>`;
 
     $("#catBack").addEventListener("click", () => go("settings"));
     $("#catEditToggle").addEventListener("click", () => { CAT_EDIT = !CAT_EDIT; rerender(); });
