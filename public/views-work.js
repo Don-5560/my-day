@@ -380,6 +380,20 @@ const linkedEmployer = (catName, kind) => {
   if (meta.employerId) return employerById(meta.employerId);
   return (DB.employers?.items || []).find((e) => e.linkedCategory === catName) || null;
 };
+// 初回だけ: 既存の「Uber」収入カテゴリーに勤務先「Uber Eats」（歩合制・週払い）を自動生成して紐づける。
+// 過去の取引はすでに残高に反映済みのままにし、遡ってpending化はしない
+async function ensureUberEmployerMigrated() {
+  if (DB.employers.migratedUber) return;
+  DB.employers.migratedUber = true;
+  if (!DB.employers.items.some((e) => e.linkedCategory === "Uber")) {
+    DB.employers.items.push({
+      id: uid(), name: "Uber Eats", location: "", wageType: "commission", hourlyWage: null,
+      payCycle: "weekly", weeklyPayDay: "mon", closingDay: null, paymentDay: null,
+      linkedCategory: "Uber",
+    });
+  }
+  await saveDb("employers");
+}
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
 let MONEY_CAL_DAY = null; // カレンダーで選択中の日（nullなら月全体を表示）
@@ -878,9 +892,9 @@ VIEWS.money = {
       <div class="page-head"><div><p class="eyebrow">収支管理</p><h1>収支</h1></div></div>
       <p class="empty">読み込み中…</p>`;
 
-    let fin, txs, empPending;
+    let fin, txs;
     try {
-      [fin, txs, empPending] = await Promise.all([api("/api/finance?month=" + mk), api("/api/transactions?month=" + mk), api("/api/employer-pending")]);
+      [fin, txs] = await Promise.all([api("/api/finance?month=" + mk), api("/api/transactions?month=" + mk)]);
     } catch (e) {
       main.innerHTML = `<p class="empty">読み込みに失敗しました: ${esc(e.message)}</p>`;
       return;
@@ -899,19 +913,7 @@ VIEWS.money = {
       await saveDb("budgetplan");
     }
 
-    // 初回だけ: 既存の「Uber」収入カテゴリーに勤務先「Uber Eats」（歩合制・週払い）を自動生成して紐づける。
-    // 過去の取引はすでに残高に反映済みのままにし、遡ってpending化はしない
-    if (!DB.employers.migratedUber) {
-      DB.employers.migratedUber = true;
-      if (!DB.employers.items.some((e) => e.linkedCategory === "Uber")) {
-        DB.employers.items.push({
-          id: uid(), name: "Uber Eats", location: "", wageType: "commission", hourlyWage: null,
-          payCycle: "weekly", weeklyPayDay: "mon", closingDay: null, paymentDay: null,
-          linkedCategory: "Uber",
-        });
-      }
-      await saveDb("employers");
-    }
+    await ensureUberEmployerMigrated();
 
     const groupByCat = (list) => {
       const m = {};
@@ -920,7 +922,6 @@ VIEWS.money = {
     };
     const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
     const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
-    const empPendingMap = Object.fromEntries(empPending.map((p) => [p.employerId, p]));
 
     // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
     let running = fin.currentBalance;
@@ -947,24 +948,19 @@ VIEWS.money = {
         ${MONEY_TAB === "actual" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="setInit">${icon("wallet", 15)} 初期残高</button>
           <button class="btn" id="addTx">${icon("plus", 15)} 記録</button>
-        </div>` : MONEY_TAB === "employer" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn" id="addEmp">${icon("plus", 15)} 勤務先を追加</button>
         </div>` : ""}
       </div>
       <div class="tabs" style="margin-bottom:16px">
         <button class="tab ${MONEY_TAB === "actual" ? "active" : ""}" data-mtab="actual">収支</button>
         <button class="tab ${MONEY_TAB === "breakdown" ? "active" : ""}" data-mtab="breakdown">内訳</button>
         <button class="tab ${MONEY_TAB === "plan" ? "active" : ""}" data-mtab="plan">予想収支</button>
-        <button class="tab ${MONEY_TAB === "employer" ? "active" : ""}" data-mtab="employer">勤務先</button>
       </div>
       ${MONEY_TAB === "breakdown" ? `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月の内訳です。月を変えたい場合は「収支」タブで移動してください。</p>
       <div class="grid2">
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
-      </div>` : MONEY_TAB === "employer" ? `
-      <p class="small" style="color:var(--muted);margin:-8px 0 16px">給与体系や支払いサイクルを登録すると、収入を記録するときに自動で計算・入金管理ができます。給料日を過ぎると自動で入金確定（未収→残高に反映）されます。</p>
-      ${employerListHTML(DB.employers.items, empPendingMap)}` : MONEY_TAB === "actual" ? `
+      </div>` : MONEY_TAB === "actual" ? `
       <div class="card" style="margin-bottom:18px">
         <h2>${icon("wallet", 15)} 残高</h2>
         <p style="margin:4px 0 0;font-size:28px;font-weight:800">${signedYen(fin.currentBalance)}</p>
@@ -1057,31 +1053,6 @@ VIEWS.money = {
       };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
-    });
-    // 勤務先の追加・編集
-    $("#addEmp")?.addEventListener("click", async () => {
-      const v = await employerModal({});
-      if (!v) return;
-      DB.employers.items.push({ id: uid(), ...v });
-      await saveDb("employers");
-      rerender();
-    });
-    $$("[data-emp-open]", main).forEach((el) => {
-      const open = async () => {
-        const e = DB.employers.items.find((x) => x.id === el.dataset.empOpen);
-        if (!e) return;
-        const v = await employerModal(e);
-        if (!v) return;
-        if (v.__delete) {
-          DB.employers.items = DB.employers.items.filter((x) => x.id !== e.id);
-        } else {
-          Object.assign(e, v);
-        }
-        await saveDb("employers");
-        rerender();
-      };
-      el.addEventListener("click", open);
-      el.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
     });
     if (MONEY_TAB !== "actual") return;
 
@@ -1658,9 +1629,12 @@ async function templateModal(initial = {}) {
 VIEWS.settings = {
   title: "設定", icon: "settings",
   async render(main) {
-    let tplDoc;
+    let tplDoc, empPending;
     try { tplDoc = await api("/api/templates"); } catch (e) { tplDoc = { recurring: [] }; }
+    try { empPending = await api("/api/employer-pending"); } catch (e) { empPending = []; }
     const recurring = tplDoc.recurring || [];
+    await ensureUberEmployerMigrated();
+    const empPendingMap = Object.fromEntries(empPending.map((p) => [p.employerId, p]));
     main.innerHTML = `
       <div class="page-head"><div><p class="eyebrow">Settings</p><h1>設定</h1></div></div>
 
@@ -1691,6 +1665,13 @@ VIEWS.settings = {
         <h2>${icon("check", 15)} 毎日の定番タスク</h2>
         <div id="tplList">${templateListHTML(recurring)}</div>
         <button class="btn ghost sm" id="tplAdd" style="margin-top:10px">${icon("plus", 13)} 定番タスクを追加</button>
+      </div>
+
+      <div class="card">
+        <h2>${icon("briefcase", 15)} 勤務先</h2>
+        <p class="small" style="color:var(--muted);margin:-2px 0 12px">給与体系や支払いサイクルを登録すると、収支ページで収入を記録するときに自動で計算・入金管理ができます。給料日を過ぎると自動で入金確定（未収→残高に反映）されます。</p>
+        <div id="empList">${employerListHTML(DB.employers.items, empPendingMap)}</div>
+        <button class="btn ghost sm" id="addEmp" style="margin-top:10px">${icon("plus", 13)} 勤務先を追加</button>
       </div>
 
       <div class="card">
@@ -1750,6 +1731,32 @@ VIEWS.settings = {
       };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+
+    // 勤務先の追加・編集
+    $("#addEmp").addEventListener("click", async () => {
+      const v = await employerModal({});
+      if (!v) return;
+      DB.employers.items.push({ id: uid(), ...v });
+      await saveDb("employers");
+      rerender();
+    });
+    $$("[data-emp-open]", main).forEach((el) => {
+      const open = async () => {
+        const e = DB.employers.items.find((x) => x.id === el.dataset.empOpen);
+        if (!e) return;
+        const v = await employerModal(e);
+        if (!v) return;
+        if (v.__delete) {
+          DB.employers.items = DB.employers.items.filter((x) => x.id !== e.id);
+        } else {
+          Object.assign(e, v);
+        }
+        await saveDb("employers");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
     });
 
     $("#exportJson").addEventListener("click", async () => {
