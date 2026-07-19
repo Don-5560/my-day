@@ -558,8 +558,8 @@ function moneyTxListHTML(txs, filterDay) {
         const inc = t.type === "income";
         const meta = catMeta(t.category, t.type);
         return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
-          <span class="cat-badge" style="color:${meta.color}" title="${esc(meta.name)}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
-          <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
+          <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
+          <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
           ${t.payoutStatus === "pending" ? `<span class="pill amb">未収</span>` : ""}
           <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
         </div>`;
