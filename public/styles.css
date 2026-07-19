@@ -380,6 +380,22 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 }
 /* 取引一覧: カテゴリー名の隣にメモを小さく（）付きで表示 */
 .tx-memo { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 2px; }
+/* 給料まとめ行の内訳（インデントして小さく表示） */
+.tx-sub-list { padding-left: 12px; border-left: 2px solid var(--line); margin: 2px 0 2px 13px; }
+.tx-sub .tx-sub-date { color: var(--muted); font-size: 12px; flex: 0 0 auto; min-width: 44px; }
+.ic.rot90 { transform: rotate(90deg); }
+
+/* カテゴリー管理ページ */
+.cat-row { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--line); }
+.cat-row:last-child { border-bottom: 0; }
+.cat-row.dragging { opacity: .5; background: var(--surface-2); }
+.cat-row-name { flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-chev { color: var(--muted); display: inline-flex; }
+.cat-del {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; border: 0; padding: 0;
+  background: var(--red); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.cat-handle { flex: 0 0 auto; color: var(--muted); cursor: grab; touch-action: none; display: inline-flex; padding: 4px; }
 /* カテゴリー追加: 色のプリセット選択 */
 .color-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .color-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }

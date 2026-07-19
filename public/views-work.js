@@ -358,14 +358,58 @@ VIEWS.sales = {
 
 const TX_INCOME_CATS = [{ name: "Web制作", icon: "layers", color: "#3B82F6" }, { name: "Uber", icon: "send", color: "#10B981" }, { name: "その他", icon: "grid", color: "#9AA3B2" }];
 const TX_EXPENSE_CATS = [{ name: "生活費", icon: "home", color: "#3B82F6" }, { name: "事業経費", icon: "briefcase", color: "#8B5CF6" }, { name: "ツール代", icon: "settings", color: "#6B7280" }, { name: "その他", icon: "grid", color: "#9AA3B2" }];
+// 初回に用意する一般的なカテゴリー（Zaim風）。既存のカテゴリーと統合される（重複は名前で除外）
+const CAT_SEED_EXPENSE = [
+  { name: "食費", icon: "utensils", color: "#F97316" },
+  { name: "日用品", icon: "milk", color: "#10B981" },
+  { name: "衣服", icon: "shirt", color: "#3B82F6" },
+  { name: "美容", icon: "lipstick", color: "#EC4899" },
+  { name: "交際費", icon: "wine", color: "#EAB308" },
+  { name: "医療費", icon: "pill", color: "#10B981" },
+  { name: "教育費", icon: "book", color: "#EF4444" },
+  { name: "光熱費", icon: "droplet", color: "#06B6D4" },
+  { name: "交通費", icon: "train", color: "#B45309" },
+  { name: "通信費", icon: "phone", color: "#6B7280" },
+  { name: "住居費", icon: "home", color: "#F59E0B" },
+];
+const CAT_SEED_INCOME = [
+  { name: "給料", icon: "wallet", color: "#10B981" },
+  { name: "おこづかい", icon: "piggy", color: "#F97316" },
+  { name: "賞与", icon: "gift", color: "#F97316" },
+  { name: "副業", icon: "moneybag", color: "#06B6D4" },
+  { name: "投資", icon: "coins", color: "#14B8A6" },
+  { name: "臨時収入", icon: "handcoins", color: "#EC4899" },
+];
 // カテゴリーに付けられるアイコンの候補（自分で追加するときに選べる）
-const CAT_ICON_CHOICES = ["home", "briefcase", "send", "yen", "wallet", "card", "dollar", "trending", "layers", "book", "graduation", "target", "trophy", "chart", "calendar", "settings", "grid", "zap", "plug", "wifi", "droplet", "flame", "timer", "file", "receipt", "download", "link", "external", "coffee", "utensils", "cart", "bag", "gift", "car", "train", "plane", "fuel", "heart", "pill", "music", "film", "gamepad", "shirt", "dumbbell", "scissors", "phone", "star"];
+const CAT_ICON_CHOICES = ["home", "briefcase", "send", "yen", "wallet", "card", "dollar", "trending", "coins", "moneybag", "handcoins", "piggy", "layers", "book", "graduation", "target", "trophy", "chart", "calendar", "settings", "grid", "zap", "plug", "wifi", "droplet", "flame", "timer", "file", "receipt", "download", "link", "external", "coffee", "utensils", "milk", "wine", "cart", "bag", "gift", "lipstick", "car", "train", "plane", "fuel", "heart", "pill", "music", "film", "gamepad", "shirt", "dumbbell", "scissors", "phone", "star"];
 // カテゴリーに付けられる色の候補（プリセット。hex直接入力も可）
 const CAT_COLOR_CHOICES = ["#3B82F6", "#8B5CF6", "#EC4899", "#EF4444", "#F59E0B", "#10B981", "#14B8A6", "#06B6D4", "#6366F1", "#84CC16", "#F97316", "#6B7280"];
 const DEFAULT_CAT_COLOR = "#9AA3B2";
 // 保存済みのカテゴリーは {name, icon, color} のはずだが、古い形式（文字列だけ、colorなし）が残っていても動くようにする
 const normCat = (c) => (typeof c === "string" ? { name: c, icon: "grid", color: DEFAULT_CAT_COLOR } : { color: DEFAULT_CAT_COLOR, ...c });
-const moneyCatList = (kind) => [...(kind === "income" ? TX_INCOME_CATS : TX_EXPENSE_CATS), ...(DB.categories[kind] || []).map(normCat)];
+// 移行後はカテゴリーをすべて DB.categories[kind] に持つ（追加/編集/削除/並べ替え可能）。
+// 移行前は旧デフォルト（定数）＋ユーザー追加分を合成して返す。
+const moneyCatList = (kind) => DB.categories?.migrated
+  ? (DB.categories[kind] || []).map(normCat)
+  : [...(kind === "income" ? TX_INCOME_CATS : TX_EXPENSE_CATS), ...((DB.categories?.[kind]) || []).map(normCat)];
+// 一般セット＋旧デフォルト＋既存カスタムを、名前で重複除去しつつ1つの配列に統合して保存する（初回だけ）
+async function ensureCategoriesMigrated() {
+  if (DB.categories.migrated) return;
+  const merge = (...lists) => {
+    const seen = new Set(), out = [];
+    for (const list of lists) for (const raw of list) {
+      const c = normCat(raw);
+      if (seen.has(c.name)) continue;
+      seen.add(c.name);
+      out.push({ name: c.name, icon: c.icon, color: c.color, ...(c.employerId ? { employerId: c.employerId } : {}) });
+    }
+    return out;
+  };
+  DB.categories.income = merge(CAT_SEED_INCOME, TX_INCOME_CATS, DB.categories.income || []);
+  DB.categories.expense = merge(CAT_SEED_EXPENSE, TX_EXPENSE_CATS, DB.categories.expense || []);
+  DB.categories.migrated = true;
+  await saveDb("categories");
+}
 // 取引の category（文字列）からアイコン・色を引く。見つからない/未分類の取引は既定アイコン＋グレーでフォールバック
 const catMeta = (name, kind) => moneyCatList(kind).find((c) => c.name === name) || { name, icon: "grid", color: DEFAULT_CAT_COLOR };
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
@@ -397,6 +441,7 @@ async function ensureUberEmployerMigrated() {
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
 let MONEY_CAL_DAY = null; // カレンダーで選択中の日（nullなら月全体を表示）
+const EXPANDED_TX_BUNDLES = new Set(); // 展開中の「給料まとめ」行のキー（employerId|payoutDate）
 // カレンダーの枠に収めるための短い金額表記（1万円未満はそのまま、以上は「15万」のように丸める）
 const fmtYenShort = (n) => {
   n = Math.round(Number(n) || 0);
@@ -541,29 +586,64 @@ function moneyCalGridHTML(mk, txs) {
   }
   return `<div class="cal-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-grid" id="moneyCalGrid">${cells}</div>`;
 }
-// 取引一覧。日付ごとにグループ化し、タップで編集モーダルを開く
+// 取引一覧。日付ごとにグループ化し、タップで編集モーダルを開く。
+// 勤務先に紐づく収入は「支払い日ごとに1件」へまとめる（＝給料。個別の記録はタップで内訳表示）。
 function moneyTxListHTML(txs, filterDay) {
   const list = filterDay ? txs.filter((t) => t.date === filterDay) : txs;
   if (!list.length) return '<p class="empty">この期間の取引はありません</p>';
-  const groups = [];
+  const doBundle = !filterDay; // 日で絞り込み中は、その日の内訳を見たいのでまとめない
+  const bundleMap = {};
+  const entries = [];
   for (const t of list) {
-    const g = groups[groups.length - 1];
-    if (g && g.date === t.date) g.items.push(t); else groups.push({ date: t.date, items: [t] });
+    if (doBundle && t.type === "income" && t.employerId && t.payoutDate) {
+      const key = t.employerId + "|" + t.payoutDate;
+      let b = bundleMap[key];
+      if (!b) { b = bundleMap[key] = { bundle: true, key, date: t.payoutDate, employerId: t.employerId, category: t.category, amount: 0, items: [], pending: false }; entries.push(b); }
+      b.amount += t.amount; b.items.push(t);
+      if (t.payoutStatus === "pending") b.pending = true;
+    } else {
+      entries.push(t);
+    }
   }
+  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 日付降順（まとめは支払い日で並ぶ）
+  const groups = [];
+  for (const e of entries) {
+    const g = groups[groups.length - 1];
+    if (g && g.date === e.date) g.items.push(e); else groups.push({ date: e.date, items: [e] });
+  }
+  const singleRow = (t) => {
+    const inc = t.type === "income";
+    const meta = catMeta(t.category, t.type);
+    return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
+      <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
+      <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
+      ${t.payoutStatus === "pending" ? `<span class="pill amb">未収</span>` : ""}
+      <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+    </div>`;
+  };
+  const bundleRow = (b) => {
+    const meta = catMeta(b.category, "income");
+    const emp = employerById(b.employerId);
+    const label = emp ? emp.name : meta.name;
+    const open = EXPANDED_TX_BUNDLES.has(b.key);
+    return `<div class="row" data-bundle="${b.key}" role="button" tabindex="0" style="cursor:pointer">
+      <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(label)}">${icon(meta.icon, 22)}</span>
+      <span class="row-title">${esc(label)}<span class="tx-memo">（${b.items.length}件）</span></span>
+      ${b.pending ? `<span class="pill amb">未収</span>` : ""}
+      <strong style="color:var(--green)">+${fmtYen(b.amount)}</strong>
+      <span class="cat-chev" style="margin-left:2px">${icon("chevR", 14, open ? "rot90" : "")}</span>
+    </div>
+    ${open ? `<div class="tx-sub-list">${b.items.map((t) => `<div class="row tx-sub" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
+      <span class="tx-sub-date">${fmtShort(t.date)}</span>
+      <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
+      <strong style="color:var(--green)">+${fmtYen(t.amount)}</strong>
+    </div>`).join("")}</div>` : ""}`;
+  };
   return groups.map((g) => {
-    const net = g.items.reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
+    const net = g.items.reduce((s, e) => s + (e.bundle ? e.amount : (e.type === "income" ? e.amount : -e.amount)), 0);
     return `<div class="tx-date-group">
       <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(net)}</strong></div>
-      ${g.items.map((t) => {
-        const inc = t.type === "income";
-        const meta = catMeta(t.category, t.type);
-        return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
-          <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
-          <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
-          ${t.payoutStatus === "pending" ? `<span class="pill amb">未収</span>` : ""}
-          <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
-        </div>`;
-      }).join("")}
+      ${g.items.map((e) => e.bundle ? bundleRow(e) : singleRow(e)).join("")}
     </div>`;
   }).join("");
 }
@@ -572,36 +652,43 @@ function moneyTxListHTML(txs, filterDay) {
 // txFormModal（取引を追加）の中から呼ばれることを前提に、#modalWrapを上書きせず
 // 独立したオーバーレイをbodyに重ねて表示する（#modalWrapを上書きすると呼び出し元の
 // モーダルのDOM/イベントリスナーごと消えてしまい、保存後に取引モーダルが閉じてしまうため）
-function categoryModal(kind) {
-  const draft = { icon: CAT_ICON_CHOICES[0], color: CAT_COLOR_CHOICES[0] };
+function categoryModal(kind, initial = {}) {
+  const isEdit = !!initial.name;
+  const draft = { icon: initial.icon || CAT_ICON_CHOICES[0], color: initial.color || CAT_COLOR_CHOICES[0] };
   const showEmpField = kind === "income" && (DB.employers?.items || []).length > 0;
   return new Promise((resolve) => {
     const box = document.createElement("div");
     const finish = (result) => { box.remove(); resolve(result); };
     box.innerHTML = `<div class="overlay"><div class="modal">
-      <div class="modal-head"><h3>カテゴリーを追加</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <div class="modal-head"><h3>${esc(isEdit ? "カテゴリーを編集" : "カテゴリーを追加")}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
       <form id="cform">
         <label class="f-label">名前</label>
-        <input type="text" name="name" placeholder="例）交際費">
+        <input type="text" name="name" value="${esc(initial.name || "")}" placeholder="例）交際費">
         <label class="f-label">アイコン</label>
-        <div class="cat-grid">${CAT_ICON_CHOICES.map((ic) => `<button type="button" class="cat-tile ${draft.icon === ic ? "active" : ""}" data-icon="${ic}">${icon(ic, 20)}</button>`).join("")}</div>
+        <div class="cat-grid">${CAT_ICON_CHOICES.map((ic) => `<button type="button" class="cat-tile ${draft.icon === ic ? "active" : ""}" data-icon="${ic}"><span class="cat-tile-ic" style="color:${draft.color}">${icon(ic, 20)}</span></button>`).join("")}</div>
         <label class="f-label">色</label>
         <div class="color-grid">${CAT_COLOR_CHOICES.map((c) => `<button type="button" class="color-swatch ${draft.color === c ? "active" : ""}" data-color="${c}" style="background:${c}"></button>`).join("")}</div>
         <input type="text" name="colorHex" value="${esc(draft.color)}" placeholder="#RRGGBB" style="margin-top:8px" maxlength="7">
         ${showEmpField ? `<label class="f-label">勤務先に紐づける（任意）</label>
         <select name="employerId">
           <option value="">紐づけない</option>
-          ${DB.employers.items.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join("")}
+          ${DB.employers.items.map((e) => `<option value="${e.id}" ${initial.employerId === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}
         </select>` : ""}
         <div class="modal-foot">
+          ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
-          <button type="submit" class="btn">${icon("checkline", 15)} 追加</button>
+          <button type="submit" class="btn">${icon("checkline", 15)} ${isEdit ? "保存" : "追加"}</button>
         </div>
       </form>
     </div></div>`;
     document.body.appendChild(box);
+    // アイコンの色プレビューを今の選択色に合わせて更新する
+    const paintIcons = () => $$(".cat-tile-ic", box).forEach((s) => (s.style.color = draft.color));
     box.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
     $$("[data-x]", box).forEach((b) => b.addEventListener("click", () => finish(null)));
+    if (isEdit) box.querySelector("[data-del]").addEventListener("click", async () => {
+      if (await confirmBox(`「${initial.name}」を削除しますか？`)) finish({ __delete: true });
+    });
     $$("[data-icon]", box).forEach((b) => b.addEventListener("click", () => {
       $$("[data-icon]", box).forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
@@ -612,7 +699,12 @@ function categoryModal(kind) {
       b.classList.add("active");
       draft.color = b.dataset.color;
       box.querySelector('input[name=colorHex]').value = draft.color;
+      paintIcons();
     }));
+    box.querySelector('input[name=colorHex]').addEventListener("input", (e) => {
+      const hex = e.target.value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(hex)) { draft.color = hex; paintIcons(); }
+    });
     box.querySelector("#cform").addEventListener("submit", (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -922,6 +1014,7 @@ VIEWS.money = {
       await saveDb("budgetplan");
     }
 
+    await ensureCategoriesMigrated();
     await ensureUberEmployerMigrated();
 
     const groupByCat = (list) => {
@@ -1072,6 +1165,12 @@ VIEWS.money = {
     attachSwipe($("#moneyCalGrid", main), (dir) => { MONEY_MONTH = shiftMonth(mk, dir === "right" ? -1 : 1); MONEY_CAL_DAY = null; rerender(); });
     $$("[data-mday]", main).forEach((b) => b.addEventListener("click", () => {
       MONEY_CAL_DAY = MONEY_CAL_DAY === b.dataset.mday ? null : b.dataset.mday;
+      rerender();
+    }));
+    // 給料まとめ行をタップ→内訳の開閉
+    $$("[data-bundle]", main).forEach((el) => el.addEventListener("click", () => {
+      const k = el.dataset.bundle;
+      if (EXPANDED_TX_BUNDLES.has(k)) EXPANDED_TX_BUNDLES.delete(k); else EXPANDED_TX_BUNDLES.add(k);
       rerender();
     }));
     // 取引をタップ→編集（削除もこのモーダルの中から）
@@ -1635,6 +1734,120 @@ async function templateModal(initial = {}) {
   }
 }
 
+// ===== カテゴリー管理（支出/収入の追加・編集・削除・並べ替え） =====
+let CAT_TAB = "expense"; // "expense" | "income"
+let CAT_EDIT = false;    // 編集モード（削除ボタン＋並べ替えハンドルを表示）
+
+// リストの並べ替え（タッチ/マウス両対応）。ハンドルをドラッグして順序を入れ替える。
+function makeSortable(listEl, handleSel, itemSel, onReorder) {
+  listEl.querySelectorAll(handleSel).forEach((handle) => {
+    handle.style.touchAction = "none";
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const dragEl = handle.closest(itemSel);
+      if (!dragEl) return;
+      const items = [...listEl.querySelectorAll(itemSel)];
+      const oldIdx = items.indexOf(dragEl);
+      dragEl.classList.add("dragging");
+      handle.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const y = ev.clientY;
+        const after = items.filter((el) => el !== dragEl).find((el) => {
+          const r = el.getBoundingClientRect();
+          return y < r.top + r.height / 2;
+        });
+        if (after) listEl.insertBefore(dragEl, after);
+        else listEl.appendChild(dragEl);
+      };
+      const up = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        dragEl.classList.remove("dragging");
+        const newIdx = [...listEl.querySelectorAll(itemSel)].indexOf(dragEl);
+        if (newIdx >= 0 && newIdx !== oldIdx) onReorder(oldIdx, newIdx);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+    });
+  });
+}
+
+const catRowsHTML = (cats) => cats.length
+  ? cats.map((c, i) => `<div class="cat-row" data-idx="${i}" data-name="${esc(c.name)}">
+      ${CAT_EDIT ? `<button type="button" class="cat-del" data-del="${i}" aria-label="削除">${icon("minus", 15)}</button>` : ""}
+      <span class="cat-tile-ic" style="color:${normCat(c).color}">${icon(c.icon, 22)}</span>
+      <span class="cat-row-name">${esc(c.name)}</span>
+      ${CAT_EDIT ? `<span class="cat-handle" data-handle="${i}">${icon("menu", 18)}</span>` : `<span class="cat-chev">${icon("chevR", 16)}</span>`}
+    </div>`).join("")
+  : '<p class="empty">カテゴリーがありません</p>';
+
+VIEWS.categories = {
+  title: "カテゴリー", icon: "grid",
+  async render(main) {
+    await ensureCategoriesMigrated();
+    const kind = CAT_TAB;
+    const cats = (DB.categories[kind] || []).map(normCat);
+    main.innerHTML = `
+      <div class="page-head">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="icon-btn" id="catBack" aria-label="戻る">${icon("chevR", 18, "flip")}</button>
+          <div><p class="eyebrow">Categories</p><h1>カテゴリー</h1></div>
+        </div>
+        <button class="btn ghost" id="catEditToggle">${CAT_EDIT ? "完了" : "編集"}</button>
+      </div>
+      <div class="tabs" style="margin-bottom:16px">
+        <button class="tab ${kind === "expense" ? "active" : ""}" data-ctab="expense">支出</button>
+        <button class="tab ${kind === "income" ? "active" : ""}" data-ctab="income">収入</button>
+      </div>
+      <button class="btn ghost" id="catAdd" style="width:100%;justify-content:flex-start;margin-bottom:14px">${icon("plus", 16)} 新規カテゴリーの追加</button>
+      <div class="card" style="padding:6px 14px"><div id="catList">${catRowsHTML(cats)}</div></div>`;
+
+    $("#catBack").addEventListener("click", () => go("settings"));
+    $("#catEditToggle").addEventListener("click", () => { CAT_EDIT = !CAT_EDIT; rerender(); });
+    $$("[data-ctab]", main).forEach((b) => b.addEventListener("click", () => { CAT_TAB = b.dataset.ctab; rerender(); }));
+
+    $("#catAdd").addEventListener("click", async () => {
+      const v = await categoryModal(kind);
+      if (!v || v.__delete) return;
+      DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) }];
+      try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
+      rerender();
+    });
+
+    if (!CAT_EDIT) {
+      // 通常モード: 行タップで編集
+      $$(".cat-row", main).forEach((row) => row.addEventListener("click", async () => {
+        const i = Number(row.dataset.idx);
+        const cur = normCat(DB.categories[kind][i]);
+        const v = await categoryModal(kind, cur);
+        if (!v) return;
+        if (v.__delete) DB.categories[kind].splice(i, 1);
+        else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) };
+        try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
+        rerender();
+      }));
+    } else {
+      // 編集モード: 赤い−で削除、ハンドルで並べ替え
+      $$("[data-del]", main).forEach((b) => b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const i = Number(b.dataset.del);
+        const name = DB.categories[kind][i]?.name;
+        if (!(await confirmBox(`「${name}」を削除しますか？`))) return;
+        DB.categories[kind].splice(i, 1);
+        try { await saveDb("categories"); } catch (err) { toast(err.message, "x"); return; }
+        rerender();
+      }));
+      makeSortable($("#catList", main), "[data-handle]", ".cat-row", async (from, to) => {
+        const arr = DB.categories[kind];
+        const [moved] = arr.splice(from, 1);
+        arr.splice(to, 0, moved);
+        try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); }
+        rerender();
+      });
+    }
+  },
+};
+
 VIEWS.settings = {
   title: "設定", icon: "settings",
   async render(main) {
@@ -1642,6 +1855,7 @@ VIEWS.settings = {
     try { tplDoc = await api("/api/templates"); } catch (e) { tplDoc = { recurring: [] }; }
     try { empPending = await api("/api/employer-pending"); } catch (e) { empPending = []; }
     const recurring = tplDoc.recurring || [];
+    await ensureCategoriesMigrated();
     await ensureUberEmployerMigrated();
     const empPendingMap = Object.fromEntries(empPending.map((p) => [p.employerId, p]));
     main.innerHTML = `
@@ -1674,6 +1888,11 @@ VIEWS.settings = {
         <h2>${icon("check", 15)} 毎日の定番タスク</h2>
         <div id="tplList">${templateListHTML(recurring)}</div>
         <button class="btn ghost sm" id="tplAdd" style="margin-top:10px">${icon("plus", 13)} 定番タスクを追加</button>
+      </div>
+
+      <div class="card" id="catManageCard" role="button" tabindex="0" style="cursor:pointer">
+        <h2>${icon("grid", 15)} カテゴリー</h2>
+        <p class="small" style="color:var(--muted);margin:-2px 0 0">収入・支出のカテゴリーを追加・編集・並べ替えできます ${icon("chevR", 13)}</p>
       </div>
 
       <div class="card">
@@ -1741,6 +1960,9 @@ VIEWS.settings = {
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
     });
+
+    // カテゴリー管理ページへ
+    $("#catManageCard").addEventListener("click", () => go("categories"));
 
     // 勤務先の追加・編集
     // 同じ収入カテゴリーは1つの勤務先にだけ連動させる（他の勤務先から外す）
