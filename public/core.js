@@ -60,6 +60,7 @@ const DOC_DEFAULTS = {
   categories: { income: [], expense: [], task: [] }, // ユーザーが追加した収入/支出/予定カテゴリー
   budgetplan: { blocks: [] }, // 予想収支シミュレーション（収入/支出/残高チェックポイントのブロックを好きな順に積み上げる）
   employers: { items: [] }, // 勤務先マスタ（給与体系・支払いサイクル）
+  creditCards: { items: [] }, // クレジットカードマスタ（締め日・引き落とし日サイクル）
   todos: { items: [] },
   study: { logs: [] },          // {id,date,min,subject,src}
   habits: { list: [], checks: {} },

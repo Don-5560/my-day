@@ -401,7 +401,7 @@ async function ensureCategoriesMigrated() {
       const c = normCat(raw);
       if (seen.has(c.name)) continue;
       seen.add(c.name);
-      out.push({ name: c.name, icon: c.icon, color: c.color, ...(c.employerId ? { employerId: c.employerId } : {}) });
+      out.push({ name: c.name, icon: c.icon, color: c.color, ...(c.employerId ? { employerId: c.employerId } : {}), ...(c.creditCardId ? { creditCardId: c.creditCardId } : {}) });
     }
     return out;
   };
@@ -424,9 +424,22 @@ const linkedEmployer = (catName, kind) => {
   if (meta.employerId) return employerById(meta.employerId);
   return (DB.employers?.items || []).find((e) => e.linkedCategory === catName) || null;
 };
-// 勤務先に紐づく収入は「稼いだ日」ではなく「給料日（支払い日）」に計上する。
-// カレンダー/一覧はこの日付でグループ化・表示する（稼いだ日には金額を出さない）
-const txDisplayDate = (t) => (t.type === "income" && t.employerId && t.payoutDate) ? t.payoutDate : t.date;
+// クレジットカードマスタ（締め日・引き落とし日サイクル）
+const creditCardById = (id) => (DB.creditCards?.items || []).find((c) => c.id === id);
+// 支出カテゴリーがクレジットカードに紐づいている場合、そのカードを返す（収入カテゴリーは常にnull）
+const linkedCreditCard = (catName, kind) => {
+  if (kind !== "expense") return null;
+  const meta = catMeta(catName, kind);
+  if (meta.creditCardId) return creditCardById(meta.creditCardId);
+  return (DB.creditCards?.items || []).find((c) => c.linkedCategory === catName) || null;
+};
+// 勤務先に紐づく収入は「稼いだ日」、クレジットカードに紐づく支出は「使った日」ではなく、
+// それぞれ「給料日/引き落とし日（支払い日）」に計上する。カレンダー/一覧はこの日付でグループ化・表示する
+const txDisplayDate = (t) => {
+  if (t.type === "income" && t.employerId && t.payoutDate) return t.payoutDate;
+  if (t.type === "expense" && t.creditCardId && t.payoutDate) return t.payoutDate;
+  return t.date;
+};
 // 初回だけ: 既存の「Uber」収入カテゴリーに勤務先「Uber Eats」（歩合制・週払い）を自動生成して紐づける。
 // 過去の取引はすでに残高に反映済みのままにし、遡ってpending化はしない
 async function ensureUberEmployerMigrated() {
@@ -597,17 +610,18 @@ function moneyTxListHTML(txs, filterDay) {
   const bundleMap = {};
   const entries = [];
   for (const t of list) {
-    if (t.type === "income" && t.employerId && t.payoutDate) {
-      const key = t.employerId + "|" + t.payoutDate;
+    const refId = t.type === "income" ? t.employerId : t.creditCardId;
+    if (refId && t.payoutDate) {
+      const key = t.type + "|" + refId + "|" + t.payoutDate;
       let b = bundleMap[key];
-      if (!b) { b = bundleMap[key] = { bundle: true, key, date: t.payoutDate, employerId: t.employerId, category: t.category, amount: 0, items: [], pending: false }; entries.push(b); }
+      if (!b) { b = bundleMap[key] = { bundle: true, key, type: t.type, date: t.payoutDate, refId, category: t.category, amount: 0, items: [], pending: false }; entries.push(b); }
       b.amount += t.amount; b.items.push(t);
       if (t.payoutStatus === "pending") b.pending = true;
     } else {
       entries.push(t);
     }
   }
-  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 日付降順（まとめは支払い日で並ぶ）
+  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 日付降順（まとめは支払い日/引き落とし日で並ぶ）
   const groups = [];
   for (const e of entries) {
     const g = groups[groups.length - 1];
@@ -619,30 +633,31 @@ function moneyTxListHTML(txs, filterDay) {
     return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
-      ${t.payoutStatus === "pending" ? `<span class="pill amb">未収</span>` : ""}
+      ${t.payoutStatus === "pending" ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
       <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
     </div>`;
   };
   const bundleRow = (b) => {
-    const meta = catMeta(b.category, "income");
-    const emp = employerById(b.employerId);
-    const label = emp ? emp.name : meta.name;
+    const inc = b.type === "income";
+    const meta = catMeta(b.category, b.type);
+    const ref = inc ? employerById(b.refId) : creditCardById(b.refId);
+    const label = ref ? ref.name : meta.name;
     const open = EXPANDED_TX_BUNDLES.has(b.key);
     return `<div class="row" data-bundle="${b.key}" role="button" tabindex="0" style="cursor:pointer">
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(label)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(label)}<span class="tx-memo">（${b.items.length}件）</span></span>
-      ${b.pending ? `<span class="pill amb">未収</span>` : ""}
-      <strong style="color:var(--green)">+${fmtYen(b.amount)}</strong>
+      ${b.pending ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
+      <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(b.amount)}</strong>
       <span class="cat-chev" style="margin-left:2px">${icon("chevR", 14, open ? "rot90" : "")}</span>
     </div>
     ${open ? `<div class="tx-sub-list">${b.items.map((t) => `<div class="row tx-sub" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
       <span class="tx-sub-date">${fmtShort(t.date)}</span>
       <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
-      <strong style="color:var(--green)">+${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
     </div>`).join("")}</div>` : ""}`;
   };
   return groups.map((g) => {
-    const net = g.items.reduce((s, e) => s + (e.bundle ? e.amount : (e.type === "income" ? e.amount : -e.amount)), 0);
+    const net = g.items.reduce((s, e) => s + (e.type === "income" ? e.amount : -e.amount), 0);
     return `<div class="tx-date-group">
       <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(net)}</strong></div>
       ${g.items.map((e) => e.bundle ? bundleRow(e) : singleRow(e)).join("")}
@@ -658,6 +673,7 @@ function categoryModal(kind, initial = {}) {
   const isEdit = !!initial.name;
   const draft = { icon: initial.icon || CAT_ICON_CHOICES[0], color: initial.color || CAT_COLOR_CHOICES[0] };
   const showEmpField = kind === "income" && (DB.employers?.items || []).length > 0;
+  const showCardField = kind === "expense" && (DB.creditCards?.items || []).length > 0;
   return new Promise((resolve) => {
     const box = document.createElement("div");
     const finish = (result) => { box.remove(); resolve(result); };
@@ -675,6 +691,11 @@ function categoryModal(kind, initial = {}) {
         <select name="employerId">
           <option value="">紐づけない</option>
           ${DB.employers.items.map((e) => `<option value="${e.id}" ${initial.employerId === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}
+        </select>` : ""}
+        ${showCardField ? `<label class="f-label">クレジットカードに紐づける（任意）</label>
+        <select name="creditCardId">
+          <option value="">紐づけない</option>
+          ${DB.creditCards.items.map((c) => `<option value="${c.id}" ${initial.creditCardId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
         </select>` : ""}
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
@@ -715,7 +736,8 @@ function categoryModal(kind, initial = {}) {
       const hex = String(fd.get("colorHex") || "").trim();
       const color = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : draft.color;
       const employerId = showEmpField ? (String(fd.get("employerId") || "").trim() || null) : null;
-      finish({ name, icon: draft.icon, color, employerId });
+      const creditCardId = showCardField ? (String(fd.get("creditCardId") || "").trim() || null) : null;
+      finish({ name, icon: draft.icon, color, employerId, creditCardId });
     });
   });
 }
@@ -737,6 +759,7 @@ function txFormModal(initial = {}) {
     category: initial.category || "",
     employerId: initial.employerId || null,
     hours: initial.hours ?? "",
+    creditCardId: initial.creditCardId || null,
   };
   const cats0 = moneyCatList(draft.kind);
   if (!draft.category) draft.category = cats0[0]?.name || "";
@@ -782,14 +805,18 @@ function txFormModal(initial = {}) {
     </div></div>`;
     document.body.classList.add("modal-open");
 
-    // 選択中カテゴリーが勤務先に紐づいていれば勤務時間欄を出す。時給制ならその場で金額も自動計算する
-    const updateHoursRow = () => {
+    // 選択中カテゴリーが勤務先/クレジットカードに紐づいていれば、それぞれの情報をdraftに反映する。
+    // 勤務先(収入)は勤務時間欄を出し、時給制ならその場で金額も自動計算する。カード(支出)は特別な欄なし
+    const updateLinkedFields = () => {
       const emp = linkedEmployer(draft.category, draft.kind);
       const row = $("#txHoursRow", wrap);
       draft.employerId = emp ? emp.id : null;
-      if (!emp) { row.style.display = "none"; return; }
-      row.style.display = "";
-      row.querySelector(".f-label").textContent = emp.wageType === "hourly" ? "勤務時間（時間・自動計算に使用）" : "勤務時間（任意・記録用）";
+      if (!emp) { row.style.display = "none"; } else {
+        row.style.display = "";
+        row.querySelector(".f-label").textContent = emp.wageType === "hourly" ? "勤務時間（時間・自動計算に使用）" : "勤務時間（任意・記録用）";
+      }
+      const card = linkedCreditCard(draft.category, draft.kind);
+      draft.creditCardId = card ? card.id : null;
     };
     $("#txHoursRow input[name=hours]", wrap).addEventListener("input", (e) => {
       const emp = draft.employerId && employerById(draft.employerId);
@@ -803,7 +830,7 @@ function txFormModal(initial = {}) {
         $$("[data-cat]", wrap).forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         draft.category = b.dataset.cat;
-        updateHoursRow();
+        updateLinkedFields();
       }));
       $("#txCatAdd", wrap).addEventListener("click", async () => {
         await categoryManageModal(draft.kind);
@@ -812,11 +839,11 @@ function txFormModal(initial = {}) {
         if (!cats.some((c) => c.name === draft.category)) draft.category = cats[0]?.name || "";
         $("#txCatGrid", wrap).innerHTML = txCatGridHTML(cats, draft.category);
         bindCatGrid();
-        updateHoursRow();
+        updateLinkedFields();
       });
     };
     bindCatGrid();
-    updateHoursRow();
+    updateLinkedFields();
 
     wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
@@ -832,7 +859,7 @@ function txFormModal(initial = {}) {
       $("#txCostRow", wrap).style.display = isIncome() ? "" : "none";
       $("#txCatGrid", wrap).innerHTML = txCatGridHTML(cats, draft.category);
       bindCatGrid();
-      updateHoursRow();
+      updateLinkedFields();
       const submit = $("#txSubmit", wrap);
       submit.textContent = isIncome() ? "収入を記録" : "支出を記録";
       submit.style.background = isIncome() ? "" : "var(--red)";
@@ -854,6 +881,7 @@ function txFormModal(initial = {}) {
         category: draft.category,
         employerId: draft.employerId || null,
         hours: draft.employerId ? (Number(fd.get("hours")) || null) : null,
+        creditCardId: draft.creditCardId || null,
       });
     });
   });
@@ -985,6 +1013,76 @@ function employerModal(initial = {}) {
   });
 }
 
+// クレジットカード一覧。各カードに未確定合計・次回引き落とし日（渡されていれば）を表示し、タップで編集
+function creditCardListHTML(items, pendingMap) {
+  if (!items.length) return '<p class="empty">まだクレジットカードが登録されていません</p>';
+  return items.map((c) => {
+    const p = pendingMap[c.id];
+    const cycle = `${c.closingDay || 31}日締め翌${c.paymentDay || 27}日引き落とし`;
+    return `<div class="card" data-card-open="${c.id}" role="button" tabindex="0" style="cursor:pointer;margin-bottom:12px">
+      <h2>${icon("card", 15)} ${esc(c.name)}</h2>
+      <p class="small" style="color:var(--muted);margin:2px 0 0">${esc(cycle)}</p>
+      ${c.linkedCategory ? `<p class="small" style="color:var(--muted);margin:4px 0 0">${icon("link", 12)} 支出カテゴリー「${esc(c.linkedCategory)}」と連動</p>` : ""}
+      ${p ? `<div class="f-row2" style="margin-top:10px;gap:16px">
+        <div><p class="small" style="color:var(--muted);margin:0 0 2px">未確定合計</p><p style="margin:0;font-weight:800">${fmtYen(p.total)}</p></div>
+        <div><p class="small" style="color:var(--muted);margin:0 0 2px">次回引き落とし日</p><p style="margin:0;font-weight:800">${fmtDateFull(p.nextChargeDate)}</p></div>
+      </div>` : ""}
+    </div>`;
+  }).join("");
+}
+// クレジットカードを追加・編集するモーダル（締め日・引き落とし日は常に月次サイクル）
+function creditCardModal(initial = {}) {
+  const isEdit = !!initial.id;
+  const expenseCats = moneyCatList("expense");
+  return new Promise((resolve) => {
+    const wrap = $("#modalWrap");
+    const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head"><h3>${esc(isEdit ? "クレジットカードを編集" : "クレジットカードを追加")}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <form id="ccform">
+        <label class="f-label">名前</label>
+        <input type="text" name="name" value="${esc(initial.name || "")}" placeholder="例）楽天カード">
+        <label class="f-label">締め日・引き落とし日</label>
+        <div class="f-row2">
+          <input type="number" name="closingDay" value="${esc(initial.closingDay ?? 31)}" min="1" max="31" placeholder="末日締め=31">
+          <span class="f-sep">→ 翌</span>
+          <input type="number" name="paymentDay" value="${esc(initial.paymentDay ?? 27)}" min="1" max="31" placeholder="27日引き落とし">
+        </div>
+        <label class="f-label">連動する支出カテゴリー（任意）</label>
+        <select name="linkedCategory">
+          <option value="">連動しない</option>
+          ${expenseCats.map((c) => `<option value="${esc(c.name)}" ${initial.linkedCategory === c.name ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+        </select>
+        <p class="hint" style="margin-top:8px">ここで選んだ支出カテゴリーで記録した支出は、口座残高には反映されず「引き落とし予定」になり、引き落とし日が来たら自動で残高から引かれます。</p>
+        <div class="modal-foot">
+          ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
+          <button type="button" class="btn ghost" data-x>キャンセル</button>
+          <button type="submit" class="btn">${icon("checkline", 15)} 保存</button>
+        </div>
+      </form>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
+    if (isEdit) wrap.querySelector("[data-del]").addEventListener("click", async () => {
+      if (await confirmBox("このクレジットカードを削除しますか？（紐づく取引は残ります）")) finish({ __delete: true });
+    });
+    wrap.querySelector("#ccform").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const name = String(fd.get("name") || "").trim();
+      if (!name) { toast("名前を入力してください", "x"); return; }
+      finish({
+        name,
+        closingDay: Number(fd.get("closingDay")) || 31,
+        paymentDay: Number(fd.get("paymentDay")) || 27,
+        linkedCategory: String(fd.get("linkedCategory") || "").trim() || null,
+      });
+    });
+  });
+}
+
 VIEWS.money = {
   title: "収支", icon: "wallet",
   async render(main) {
@@ -1023,8 +1121,10 @@ VIEWS.money = {
       for (const t of list) m[t.category] = (m[t.category] || 0) + t.amount;
       return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
     };
-    const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
-    const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
+    // 内訳は確定分（未収の収入/引き落とし待ちの支出を除く）だけを集計する。残高・収支サマリーと基準を揃える
+    const confirmedTxs = txs.filter((t) => t.payoutStatus !== "pending");
+    const incomeRows = groupByCat(confirmedTxs.filter((t) => t.type === "income"));
+    const expenseRows = groupByCat(confirmedTxs.filter((t) => t.type === "expense"));
 
     // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
     let running = fin.currentBalance;
@@ -1219,7 +1319,7 @@ VIEWS.money = {
         } else {
           await api("/api/transactions", {
             method: "POST",
-            body: JSON.stringify({ type: v.type, amount: Math.round(v.amount), category: v.category, date: v.date, memo: v.memo }),
+            body: JSON.stringify({ type: v.type, amount: Math.round(v.amount), category: v.category, date: v.date, memo: v.memo, creditCardId: v.creditCardId }),
           });
         }
       } catch (e) { toast(e.message, "x"); return; }
@@ -1819,7 +1919,7 @@ function categoryManageModal(initialKind) {
       box.querySelector("[data-cat-add]").addEventListener("click", async () => {
         const v = await categoryModal(kind);
         if (!v || v.__delete) return;
-        DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) }];
+        DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) }];
         try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
         render();
       });
@@ -1830,7 +1930,7 @@ function categoryManageModal(initialKind) {
           const v = await categoryModal(kind, cur);
           if (!v) return;
           if (v.__delete) DB.categories[kind].splice(i, 1);
-          else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) };
+          else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) };
           try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
           render();
         }));
@@ -1886,7 +1986,7 @@ VIEWS.categories = {
     $("#catAdd").addEventListener("click", async () => {
       const v = await categoryModal(kind);
       if (!v || v.__delete) return;
-      DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) }];
+      DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) }];
       try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
       rerender();
     });
@@ -1899,7 +1999,7 @@ VIEWS.categories = {
         const v = await categoryModal(kind, cur);
         if (!v) return;
         if (v.__delete) DB.categories[kind].splice(i, 1);
-        else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) };
+        else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) };
         try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
         rerender();
       }));
@@ -1928,13 +2028,15 @@ VIEWS.categories = {
 VIEWS.settings = {
   title: "設定", icon: "settings",
   async render(main) {
-    let tplDoc, empPending;
+    let tplDoc, empPending, cardPending;
     try { tplDoc = await api("/api/templates"); } catch (e) { tplDoc = { recurring: [] }; }
     try { empPending = await api("/api/employer-pending"); } catch (e) { empPending = []; }
+    try { cardPending = await api("/api/creditcard-pending"); } catch (e) { cardPending = []; }
     const recurring = tplDoc.recurring || [];
     await ensureCategoriesMigrated();
     await ensureUberEmployerMigrated();
     const empPendingMap = Object.fromEntries(empPending.map((p) => [p.employerId, p]));
+    const cardPendingMap = Object.fromEntries(cardPending.map((p) => [p.creditCardId, p]));
     main.innerHTML = `
       <div class="page-head"><div><p class="eyebrow">Settings</p><h1>設定</h1></div></div>
 
@@ -1991,6 +2093,13 @@ VIEWS.settings = {
       <div class="card">
         <h2>${icon("logout", 15)} アカウント</h2>
         <button class="btn danger" id="logout">${icon("logout", 14)} ログアウト</button>
+      </div>
+
+      <div class="card">
+        <h2>${icon("card", 15)} クレジットカード</h2>
+        <p class="small" style="color:var(--muted);margin:-2px 0 12px">締め日・引き落とし日を登録すると、支出を記録しても口座残高にはすぐ反映されず「引き落とし予定」になります。引き落とし日を過ぎると自動で確定（残高から反映）されます。</p>
+        <div id="cardList">${creditCardListHTML(DB.creditCards.items, cardPendingMap)}</div>
+        <button class="btn ghost sm" id="addCard" style="margin-top:10px">${icon("plus", 13)} クレジットカードを追加</button>
       </div>`;
 
     // テーマ切替（即時反映＋端末に記憶）
@@ -2096,6 +2205,40 @@ VIEWS.settings = {
     $("#logout").addEventListener("click", async () => {
       await fetch("/api/logout", { method: "POST" });
       location.href = "/login";
+    });
+
+    // クレジットカードの追加・編集
+    // 同じ支出カテゴリーは1つのカードにだけ連動させる（他のカードから外す）
+    const dedupCardLinkedCategory = (catName, keepId) => {
+      if (!catName) return;
+      DB.creditCards.items.forEach((x) => { if (x.id !== keepId && x.linkedCategory === catName) x.linkedCategory = null; });
+    };
+    $("#addCard").addEventListener("click", async () => {
+      const v = await creditCardModal({});
+      if (!v) return;
+      const nu = { id: uid(), ...v };
+      dedupCardLinkedCategory(nu.linkedCategory, nu.id);
+      DB.creditCards.items.push(nu);
+      await saveDb("creditCards");
+      rerender();
+    });
+    $$("[data-card-open]", main).forEach((el) => {
+      const open = async () => {
+        const c = DB.creditCards.items.find((x) => x.id === el.dataset.cardOpen);
+        if (!c) return;
+        const v = await creditCardModal(c);
+        if (!v) return;
+        if (v.__delete) {
+          DB.creditCards.items = DB.creditCards.items.filter((x) => x.id !== c.id);
+        } else {
+          Object.assign(c, v);
+          dedupCardLinkedCategory(c.linkedCategory, c.id);
+        }
+        await saveDb("creditCards");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
     });
   },
 };

@@ -298,6 +298,10 @@ app.patch("/api/transactions/:id", wrap(async (req, res) => {
 app.get("/api/employer-pending", wrap(async (req, res) => {
   res.json(await store.employerPendingSummary());
 }));
+// クレジットカードごとの未確定（引き落とし予定）合計・次回引き落とし日
+app.get("/api/creditcard-pending", wrap(async (req, res) => {
+  res.json(await store.creditCardPendingSummary());
+}));
 app.delete("/api/transactions/:id", wrap(async (req, res) => {
   res.json(await store.removeTransaction(req.params.id));
 }));
