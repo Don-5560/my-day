@@ -359,7 +359,7 @@ VIEWS.sales = {
 const TX_INCOME_CATS = [{ name: "Web制作", icon: "layers", color: "#3B82F6" }, { name: "Uber", icon: "send", color: "#10B981" }, { name: "その他", icon: "grid", color: "#9AA3B2" }];
 const TX_EXPENSE_CATS = [{ name: "生活費", icon: "home", color: "#3B82F6" }, { name: "事業経費", icon: "briefcase", color: "#8B5CF6" }, { name: "ツール代", icon: "settings", color: "#6B7280" }, { name: "その他", icon: "grid", color: "#9AA3B2" }];
 // カテゴリーに付けられるアイコンの候補（自分で追加するときに選べる）
-const CAT_ICON_CHOICES = ["home", "briefcase", "send", "yen", "wallet", "layers", "book", "target", "trophy", "chart", "calendar", "settings", "grid", "zap", "flame", "timer", "file", "download", "link", "external"];
+const CAT_ICON_CHOICES = ["home", "briefcase", "send", "yen", "wallet", "card", "dollar", "trending", "layers", "book", "graduation", "target", "trophy", "chart", "calendar", "settings", "grid", "zap", "plug", "wifi", "droplet", "flame", "timer", "file", "receipt", "download", "link", "external", "coffee", "utensils", "cart", "bag", "gift", "car", "train", "plane", "fuel", "heart", "pill", "music", "film", "gamepad", "shirt", "dumbbell", "scissors", "phone", "star"];
 // カテゴリーに付けられる色の候補（プリセット。hex直接入力も可）
 const CAT_COLOR_CHOICES = ["#3B82F6", "#8B5CF6", "#EC4899", "#EF4444", "#F59E0B", "#10B981", "#14B8A6", "#06B6D4", "#6366F1", "#84CC16", "#F97316", "#6B7280"];
 const DEFAULT_CAT_COLOR = "#9AA3B2";
@@ -558,7 +558,7 @@ function moneyTxListHTML(txs, filterDay) {
         const inc = t.type === "income";
         const meta = catMeta(t.category, t.type);
         return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
-          <span class="cat-badge" style="background:${meta.color}" title="${esc(meta.name)}" aria-label="${esc(meta.name)}">${icon(meta.icon, 14)}</span>
+          <span class="cat-badge" style="color:${meta.color}" title="${esc(meta.name)}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
           <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
           ${t.payoutStatus === "pending" ? `<span class="pill amb">未収</span>` : ""}
           <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
