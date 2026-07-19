@@ -59,6 +59,7 @@ const DOC_DEFAULTS = {
   settings: { name: "しどう", todayGoal: "", monthGoal: "", salesGoal: 300000, dailyStudyGoalMin: 360, dailySalesGoal: 20000 },
   categories: { income: [], expense: [], task: [] }, // ユーザーが追加した収入/支出/予定カテゴリー
   budgetplan: { blocks: [] }, // 予想収支シミュレーション（収入/支出/残高チェックポイントのブロックを好きな順に積み上げる）
+  employers: { items: [] }, // 勤務先マスタ（給与体系・支払いサイクル）
   todos: { items: [] },
   study: { logs: [] },          // {id,date,min,subject,src}
   habits: { list: [], checks: {} },

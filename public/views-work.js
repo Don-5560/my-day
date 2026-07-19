@@ -369,6 +369,17 @@ const moneyCatList = (kind) => [...(kind === "income" ? TX_INCOME_CATS : TX_EXPE
 // 取引の category（文字列）からアイコン・色を引く。見つからない/未分類の取引は既定アイコン＋グレーでフォールバック
 const catMeta = (name, kind) => moneyCatList(kind).find((c) => c.name === name) || { name, icon: "grid", color: DEFAULT_CAT_COLOR };
 const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
+// 勤務先マスタ（給与体系・支払いサイクル）
+const employerById = (id) => (DB.employers?.items || []).find((e) => e.id === id);
+// 収入カテゴリーが勤務先に紐づいている場合、その勤務先を返す（支出カテゴリーは常にnull）。
+// 新しいカテゴリーはcategoryModalで選んだemployerIdを直接持つが、既存カテゴリー「Uber」は
+// 名前ベースのlinkedCategoryで紐づける（後から自動生成する勤務先のため、カテゴリー側を書き換えずに済む）
+const linkedEmployer = (catName, kind) => {
+  if (kind !== "income") return null;
+  const meta = catMeta(catName, kind);
+  if (meta.employerId) return employerById(meta.employerId);
+  return (DB.employers?.items || []).find((e) => e.linkedCategory === catName) || null;
+};
 let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
 let MONEY_CAL_DAY = null; // カレンダーで選択中の日（nullなら月全体を表示）
@@ -535,6 +546,7 @@ function moneyTxListHTML(txs, filterDay) {
         return `<div class="row" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
           <span class="cat-badge" style="background:${meta.color}" title="${esc(meta.name)}" aria-label="${esc(meta.name)}">${icon(meta.icon, 14)}</span>
           <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
+          ${t.payoutStatus === "pending" ? `<span class="pill amb">未収</span>` : ""}
           <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
         </div>`;
       }).join("")}
@@ -543,12 +555,16 @@ function moneyTxListHTML(txs, filterDay) {
 }
 // 新しいカテゴリーを名前+アイコン付きで追加するモーダル。{name, icon} を返す（キャンセルはnull）
 // アイコンをタップしてもモーダルを作り直さず、選択枠の付け替えだけ行う（チカチカ防止）
-function categoryModal() {
+// txFormModal（取引を追加）の中から呼ばれることを前提に、#modalWrapを上書きせず
+// 独立したオーバーレイをbodyに重ねて表示する（#modalWrapを上書きすると呼び出し元の
+// モーダルのDOM/イベントリスナーごと消えてしまい、保存後に取引モーダルが閉じてしまうため）
+function categoryModal(kind) {
   const draft = { icon: CAT_ICON_CHOICES[0], color: CAT_COLOR_CHOICES[0] };
+  const showEmpField = kind === "income" && (DB.employers?.items || []).length > 0;
   return new Promise((resolve) => {
-    const wrap = $("#modalWrap");
-    const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
-    wrap.innerHTML = `<div class="overlay"><div class="modal">
+    const box = document.createElement("div");
+    const finish = (result) => { box.remove(); resolve(result); };
+    box.innerHTML = `<div class="overlay"><div class="modal">
       <div class="modal-head"><h3>カテゴリーを追加</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
       <form id="cform">
         <label class="f-label">名前</label>
@@ -558,34 +574,40 @@ function categoryModal() {
         <label class="f-label">色</label>
         <div class="color-grid">${CAT_COLOR_CHOICES.map((c) => `<button type="button" class="color-swatch ${draft.color === c ? "active" : ""}" data-color="${c}" style="background:${c}"></button>`).join("")}</div>
         <input type="text" name="colorHex" value="${esc(draft.color)}" placeholder="#RRGGBB" style="margin-top:8px" maxlength="7">
+        ${showEmpField ? `<label class="f-label">勤務先に紐づける（任意）</label>
+        <select name="employerId">
+          <option value="">紐づけない</option>
+          ${DB.employers.items.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join("")}
+        </select>` : ""}
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-x>キャンセル</button>
           <button type="submit" class="btn">${icon("checkline", 15)} 追加</button>
         </div>
       </form>
     </div></div>`;
-    document.body.classList.add("modal-open");
-    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
-    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
-    $$("[data-icon]", wrap).forEach((b) => b.addEventListener("click", () => {
-      $$("[data-icon]", wrap).forEach((x) => x.classList.remove("active"));
+    document.body.appendChild(box);
+    box.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
+    $$("[data-x]", box).forEach((b) => b.addEventListener("click", () => finish(null)));
+    $$("[data-icon]", box).forEach((b) => b.addEventListener("click", () => {
+      $$("[data-icon]", box).forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
       draft.icon = b.dataset.icon;
     }));
-    $$("[data-color]", wrap).forEach((b) => b.addEventListener("click", () => {
-      $$("[data-color]", wrap).forEach((x) => x.classList.remove("active"));
+    $$("[data-color]", box).forEach((b) => b.addEventListener("click", () => {
+      $$("[data-color]", box).forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
       draft.color = b.dataset.color;
-      wrap.querySelector('input[name=colorHex]').value = draft.color;
+      box.querySelector('input[name=colorHex]').value = draft.color;
     }));
-    wrap.querySelector("#cform").addEventListener("submit", (e) => {
+    box.querySelector("#cform").addEventListener("submit", (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
       const name = String(fd.get("name") || "").trim();
       if (!name) { toast("名前を入力してください", "x"); return; }
       const hex = String(fd.get("colorHex") || "").trim();
       const color = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : draft.color;
-      finish({ name, icon: draft.icon, color });
+      const employerId = showEmpField ? (String(fd.get("employerId") || "").trim() || null) : null;
+      finish({ name, icon: draft.icon, color, employerId });
     });
   });
 }
@@ -605,6 +627,8 @@ function txFormModal(initial = {}) {
     cost: initial.cost ?? "",
     memo: initial.memo || "",
     category: initial.category || "",
+    employerId: initial.employerId || null,
+    hours: initial.hours ?? "",
   };
   const cats0 = moneyCatList(draft.kind);
   if (!draft.category) draft.category = cats0[0]?.name || "";
@@ -637,6 +661,10 @@ function txFormModal(initial = {}) {
         <input type="text" name="memo" value="${esc(draft.memo)}" placeholder="任意">
         <label class="f-label">カテゴリー</label>
         <div class="cat-grid" id="txCatGrid">${txCatGridHTML(cats0, draft.category)}</div>
+        <div id="txHoursRow" style="display:none">
+          <label class="f-label">勤務時間（時間）</label>
+          <input type="number" name="hours" value="${esc(draft.hours)}" placeholder="8" step="0.25" inputmode="decimal">
+        </div>
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
@@ -646,23 +674,42 @@ function txFormModal(initial = {}) {
     </div></div>`;
     document.body.classList.add("modal-open");
 
+    // 選択中カテゴリーが勤務先に紐づいていれば勤務時間欄を出す。時給制ならその場で金額も自動計算する
+    const updateHoursRow = () => {
+      const emp = linkedEmployer(draft.category, draft.kind);
+      const row = $("#txHoursRow", wrap);
+      draft.employerId = emp ? emp.id : null;
+      if (!emp) { row.style.display = "none"; return; }
+      row.style.display = "";
+      row.querySelector(".f-label").textContent = emp.wageType === "hourly" ? "勤務時間（時間・自動計算に使用）" : "勤務時間（任意・記録用）";
+    };
+    $("#txHoursRow input[name=hours]", wrap).addEventListener("input", (e) => {
+      const emp = draft.employerId && employerById(draft.employerId);
+      if (emp && emp.wageType === "hourly") {
+        const h = Number(e.target.value) || 0;
+        $("input[name=amount]", wrap).value = Math.round(h * (Number(emp.hourlyWage) || 0));
+      }
+    });
     const bindCatGrid = () => {
       $$("[data-cat]", wrap).forEach((b) => b.addEventListener("click", () => {
         $$("[data-cat]", wrap).forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         draft.category = b.dataset.cat;
+        updateHoursRow();
       }));
       $("#txCatAdd", wrap).addEventListener("click", async () => {
-        const nv = await categoryModal();
+        const nv = await categoryModal(draft.kind);
         if (!nv) return;
         DB.categories[draft.kind] = [...(DB.categories[draft.kind] || []), nv];
         try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); }
         draft.category = nv.name;
         $("#txCatGrid", wrap).innerHTML = txCatGridHTML(moneyCatList(draft.kind), draft.category);
         bindCatGrid();
+        updateHoursRow();
       });
     };
     bindCatGrid();
+    updateHoursRow();
 
     wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
@@ -678,6 +725,7 @@ function txFormModal(initial = {}) {
       $("#txCostRow", wrap).style.display = isIncome() ? "" : "none";
       $("#txCatGrid", wrap).innerHTML = txCatGridHTML(cats, draft.category);
       bindCatGrid();
+      updateHoursRow();
       const submit = $("#txSubmit", wrap);
       submit.textContent = isIncome() ? "収入を記録" : "支出を記録";
       submit.style.background = isIncome() ? "" : "var(--red)";
@@ -697,6 +745,125 @@ function txFormModal(initial = {}) {
         cost: Number(fd.get("cost")) || 0,
         memo: String(fd.get("memo") || "").trim(),
         category: draft.category,
+        employerId: draft.employerId || null,
+        hours: draft.employerId ? (Number(fd.get("hours")) || null) : null,
+      });
+    });
+  });
+}
+
+// 勤務先一覧。各カードに未収合計・次回入金日（渡されていれば）を表示し、タップで編集
+function employerListHTML(items, pendingMap) {
+  if (!items.length) return '<p class="empty">まだ勤務先が登録されていません</p>';
+  return items.map((e) => {
+    const p = pendingMap[e.id];
+    const wage = e.wageType === "hourly" ? `時給¥${Number(e.hourlyWage || 0).toLocaleString()}` : "歩合制";
+    const cycle = e.payCycle === "weekly" ? `週払い（${WD_SHORT[WD_KEYS.indexOf(e.weeklyPayDay)] || ""}曜日）` : `月払い（${e.closingDay || 31}日締め翌${e.paymentDay || 25}日払い）`;
+    return `<div class="card" data-emp-open="${e.id}" role="button" tabindex="0" style="cursor:pointer;margin-bottom:12px">
+      <h2>${icon("briefcase", 15)} ${esc(e.name)}</h2>
+      <p class="small" style="color:var(--muted);margin:2px 0 0">${esc(wage)}・${esc(cycle)}</p>
+      ${p ? `<div class="f-row2" style="margin-top:10px;gap:16px">
+        <div><p class="small" style="color:var(--muted);margin:0 0 2px">未収合計</p><p style="margin:0;font-weight:800">${fmtYen(p.total)}</p></div>
+        <div><p class="small" style="color:var(--muted);margin:0 0 2px">次回入金日</p><p style="margin:0;font-weight:800">${fmtDateFull(p.nextPayoutDate)}</p></div>
+      </div>` : ""}
+    </div>`;
+  }).join("");
+}
+// 勤務先を追加・編集するモーダル。給与形態・支払いサイクルの切替はDOM直接書き換え（チカチカ防止）
+function employerModal(initial = {}) {
+  const isEdit = !!initial.id;
+  const draft = {
+    wageType: initial.wageType || "hourly",
+    payCycle: initial.payCycle || "weekly",
+    weeklyPayDay: initial.weeklyPayDay || "fri",
+  };
+  return new Promise((resolve) => {
+    const wrap = $("#modalWrap");
+    const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
+    const isHourly = () => draft.wageType === "hourly";
+    const isWeekly = () => draft.payCycle === "weekly";
+    const wageFieldsHTML = () => isHourly() ? `
+      <label class="f-label">時給（円）</label>
+      <input type="number" name="hourlyWage" value="${esc(initial.hourlyWage ?? "")}" placeholder="1200" inputmode="numeric">` : "";
+    const cycleFieldsHTML = () => isWeekly() ? `
+      <label class="f-label">支払い曜日</label>
+      <div class="wd-picker">${WD_SHORT.map((label, i) => `<button type="button" class="wd-chip ${draft.weeklyPayDay === WD_KEYS[i] ? "active" : ""}" data-wd="${WD_KEYS[i]}">${label}</button>`).join("")}</div>` : `
+      <label class="f-label">締め日・支払日</label>
+      <div class="f-row2">
+        <input type="number" name="closingDay" value="${esc(initial.closingDay ?? 31)}" min="1" max="31" placeholder="末日締め=31">
+        <span class="f-sep">→ 翌</span>
+        <input type="number" name="paymentDay" value="${esc(initial.paymentDay ?? 25)}" min="1" max="31" placeholder="25日払い">
+      </div>`;
+
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head"><h3>${esc(isEdit ? "勤務先を編集" : "勤務先を追加")}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <form id="empform">
+        <label class="f-label">名前</label>
+        <input type="text" name="name" value="${esc(initial.name || "")}" placeholder="例）Uber Eats">
+        <label class="f-label">勤務地（任意）</label>
+        <input type="text" name="location" value="${esc(initial.location || "")}" placeholder="例）渋谷区">
+        <label class="f-label">給与形態</label>
+        <div class="tabs">
+          <button type="button" class="tab ${isHourly() ? "active" : ""}" data-wage="hourly">時給制</button>
+          <button type="button" class="tab ${!isHourly() ? "active" : ""}" data-wage="commission">歩合制</button>
+        </div>
+        <div id="empWageFields">${wageFieldsHTML()}</div>
+        <label class="f-label">支払いサイクル</label>
+        <div class="tabs">
+          <button type="button" class="tab ${isWeekly() ? "active" : ""}" data-cycle="weekly">週払い</button>
+          <button type="button" class="tab ${!isWeekly() ? "active" : ""}" data-cycle="monthly">月払い</button>
+        </div>
+        <div id="empCycleFields">${cycleFieldsHTML()}</div>
+        <div class="modal-foot">
+          ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
+          <button type="button" class="btn ghost" data-x>キャンセル</button>
+          <button type="submit" class="btn">${icon("checkline", 15)} 保存</button>
+        </div>
+      </form>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+
+    const bindWdChips = () => {
+      $$("[data-wd]", wrap).forEach((b) => b.addEventListener("click", () => {
+        $$("[data-wd]", wrap).forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        draft.weeklyPayDay = b.dataset.wd;
+      }));
+    };
+    bindWdChips();
+
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
+    if (isEdit) wrap.querySelector("[data-del]").addEventListener("click", async () => {
+      if (await confirmBox("この勤務先を削除しますか？（紐づく取引は残ります）")) finish({ __delete: true });
+    });
+    $$("[data-wage]", wrap).forEach((b) => b.addEventListener("click", () => {
+      if (b.classList.contains("active")) return;
+      $$("[data-wage]", wrap).forEach((x) => x.classList.toggle("active", x === b));
+      draft.wageType = b.dataset.wage;
+      $("#empWageFields", wrap).innerHTML = wageFieldsHTML();
+    }));
+    $$("[data-cycle]", wrap).forEach((b) => b.addEventListener("click", () => {
+      if (b.classList.contains("active")) return;
+      $$("[data-cycle]", wrap).forEach((x) => x.classList.toggle("active", x === b));
+      draft.payCycle = b.dataset.cycle;
+      $("#empCycleFields", wrap).innerHTML = cycleFieldsHTML();
+      bindWdChips();
+    }));
+    wrap.querySelector("#empform").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const name = String(fd.get("name") || "").trim();
+      if (!name) { toast("名前を入力してください", "x"); return; }
+      finish({
+        name,
+        location: String(fd.get("location") || "").trim(),
+        wageType: draft.wageType,
+        hourlyWage: draft.wageType === "hourly" ? (Number(fd.get("hourlyWage")) || 0) : null,
+        payCycle: draft.payCycle,
+        weeklyPayDay: draft.payCycle === "weekly" ? draft.weeklyPayDay : null,
+        closingDay: draft.payCycle === "monthly" ? (Number(fd.get("closingDay")) || 31) : null,
+        paymentDay: draft.payCycle === "monthly" ? (Number(fd.get("paymentDay")) || 25) : null,
       });
     });
   });
@@ -711,9 +878,9 @@ VIEWS.money = {
       <div class="page-head"><div><p class="eyebrow">収支管理</p><h1>収支</h1></div></div>
       <p class="empty">読み込み中…</p>`;
 
-    let fin, txs;
+    let fin, txs, empPending;
     try {
-      [fin, txs] = await Promise.all([api("/api/finance?month=" + mk), api("/api/transactions?month=" + mk)]);
+      [fin, txs, empPending] = await Promise.all([api("/api/finance?month=" + mk), api("/api/transactions?month=" + mk), api("/api/employer-pending")]);
     } catch (e) {
       main.innerHTML = `<p class="empty">読み込みに失敗しました: ${esc(e.message)}</p>`;
       return;
@@ -732,6 +899,20 @@ VIEWS.money = {
       await saveDb("budgetplan");
     }
 
+    // 初回だけ: 既存の「Uber」収入カテゴリーに勤務先「Uber Eats」（歩合制・週払い）を自動生成して紐づける。
+    // 過去の取引はすでに残高に反映済みのままにし、遡ってpending化はしない
+    if (!DB.employers.migratedUber) {
+      DB.employers.migratedUber = true;
+      if (!DB.employers.items.some((e) => e.linkedCategory === "Uber")) {
+        DB.employers.items.push({
+          id: uid(), name: "Uber Eats", location: "", wageType: "commission", hourlyWage: null,
+          payCycle: "weekly", weeklyPayDay: "mon", closingDay: null, paymentDay: null,
+          linkedCategory: "Uber",
+        });
+      }
+      await saveDb("employers");
+    }
+
     const groupByCat = (list) => {
       const m = {};
       for (const t of list) m[t.category] = (m[t.category] || 0) + t.amount;
@@ -739,6 +920,7 @@ VIEWS.money = {
     };
     const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
     const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
+    const empPendingMap = Object.fromEntries(empPending.map((p) => [p.employerId, p]));
 
     // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
     let running = fin.currentBalance;
@@ -765,19 +947,24 @@ VIEWS.money = {
         ${MONEY_TAB === "actual" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="setInit">${icon("wallet", 15)} 初期残高</button>
           <button class="btn" id="addTx">${icon("plus", 15)} 記録</button>
+        </div>` : MONEY_TAB === "employer" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="addEmp">${icon("plus", 15)} 勤務先を追加</button>
         </div>` : ""}
       </div>
       <div class="tabs" style="margin-bottom:16px">
         <button class="tab ${MONEY_TAB === "actual" ? "active" : ""}" data-mtab="actual">収支</button>
         <button class="tab ${MONEY_TAB === "breakdown" ? "active" : ""}" data-mtab="breakdown">内訳</button>
         <button class="tab ${MONEY_TAB === "plan" ? "active" : ""}" data-mtab="plan">予想収支</button>
+        <button class="tab ${MONEY_TAB === "employer" ? "active" : ""}" data-mtab="employer">勤務先</button>
       </div>
       ${MONEY_TAB === "breakdown" ? `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月の内訳です。月を変えたい場合は「収支」タブで移動してください。</p>
       <div class="grid2">
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
         <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
-      </div>` : MONEY_TAB === "actual" ? `
+      </div>` : MONEY_TAB === "employer" ? `
+      <p class="small" style="color:var(--muted);margin:-8px 0 16px">給与体系や支払いサイクルを登録すると、収入を記録するときに自動で計算・入金管理ができます。給料日を過ぎると自動で入金確定（未収→残高に反映）されます。</p>
+      ${employerListHTML(DB.employers.items, empPendingMap)}` : MONEY_TAB === "actual" ? `
       <div class="card" style="margin-bottom:18px">
         <h2>${icon("wallet", 15)} 残高</h2>
         <p style="margin:4px 0 0;font-size:28px;font-weight:800">${signedYen(fin.currentBalance)}</p>
@@ -871,6 +1058,31 @@ VIEWS.money = {
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
     });
+    // 勤務先の追加・編集
+    $("#addEmp")?.addEventListener("click", async () => {
+      const v = await employerModal({});
+      if (!v) return;
+      DB.employers.items.push({ id: uid(), ...v });
+      await saveDb("employers");
+      rerender();
+    });
+    $$("[data-emp-open]", main).forEach((el) => {
+      const open = async () => {
+        const e = DB.employers.items.find((x) => x.id === el.dataset.empOpen);
+        if (!e) return;
+        const v = await employerModal(e);
+        if (!v) return;
+        if (v.__delete) {
+          DB.employers.items = DB.employers.items.filter((x) => x.id !== e.id);
+        } else {
+          Object.assign(e, v);
+        }
+        await saveDb("employers");
+        rerender();
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
+    });
     if (MONEY_TAB !== "actual") return;
 
     // 収支カレンダー: 月の移動（ボタン・スワイプ）と日タップでの絞り込み
@@ -914,7 +1126,7 @@ VIEWS.money = {
           // 収入(売上)＋任意の経費を記録。残高に反映＆売上明細にミラー、利益も計算できる。
           await api("/api/sales", {
             method: "POST",
-            body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.category, date: v.date, memo: v.memo }),
+            body: JSON.stringify({ amount: Math.round(v.amount), cost: Math.round(v.cost || 0), source: v.category, date: v.date, memo: v.memo, employerId: v.employerId, hours: v.hours }),
           });
           await refreshSales(); // 売上明細にもミラーされるので反映
         } else {

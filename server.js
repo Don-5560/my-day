@@ -294,6 +294,10 @@ app.post("/api/sales", wrap(async (req, res) => {
 app.patch("/api/transactions/:id", wrap(async (req, res) => {
   res.json(await store.updateTransaction(req.params.id, req.body));
 }));
+// 勤務先ごとの未収（pending）合計・次回入金日
+app.get("/api/employer-pending", wrap(async (req, res) => {
+  res.json(await store.employerPendingSummary());
+}));
 app.delete("/api/transactions/:id", wrap(async (req, res) => {
   res.json(await store.removeTransaction(req.params.id));
 }));
