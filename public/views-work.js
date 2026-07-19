@@ -424,6 +424,9 @@ const linkedEmployer = (catName, kind) => {
   if (meta.employerId) return employerById(meta.employerId);
   return (DB.employers?.items || []).find((e) => e.linkedCategory === catName) || null;
 };
+// 勤務先に紐づく収入は「稼いだ日」ではなく「給料日（支払い日）」に計上する。
+// カレンダー/一覧はこの日付でグループ化・表示する（稼いだ日には金額を出さない）
+const txDisplayDate = (t) => (t.type === "income" && t.employerId && t.payoutDate) ? t.payoutDate : t.date;
 // 初回だけ: 既存の「Uber」収入カテゴリーに勤務先「Uber Eats」（歩合制・週払い）を自動生成して紐づける。
 // 過去の取引はすでに残高に反映済みのままにし、遡ってpending化はしない
 async function ensureUberEmployerMigrated() {
@@ -569,7 +572,7 @@ function moneyCalGridHTML(mk, txs) {
   // 月の最終日を含む週までで止める（翌月の日付だけになる行は出さない。5行の月も6行の月もそのまま）
   const totalCells = Math.ceil((first.getDay() + daysInMonth) / 7) * 7;
   const byDate = {};
-  for (const t of txs) { (byDate[t.date] ||= { income: 0, expense: 0 })[t.type] += t.amount; }
+  for (const t of txs) { (byDate[txDisplayDate(t)] ||= { income: 0, expense: 0 })[t.type] += t.amount; }
   const today = todayStr();
   let cells = "";
   for (let i = 0; i < totalCells; i++) {
@@ -589,13 +592,12 @@ function moneyCalGridHTML(mk, txs) {
 // 取引一覧。日付ごとにグループ化し、タップで編集モーダルを開く。
 // 勤務先に紐づく収入は「支払い日ごとに1件」へまとめる（＝給料。個別の記録はタップで内訳表示）。
 function moneyTxListHTML(txs, filterDay) {
-  const list = filterDay ? txs.filter((t) => t.date === filterDay) : txs;
+  const list = filterDay ? txs.filter((t) => txDisplayDate(t) === filterDay) : txs;
   if (!list.length) return '<p class="empty">この期間の取引はありません</p>';
-  const doBundle = !filterDay; // 日で絞り込み中は、その日の内訳を見たいのでまとめない
   const bundleMap = {};
   const entries = [];
   for (const t of list) {
-    if (doBundle && t.type === "income" && t.employerId && t.payoutDate) {
+    if (t.type === "income" && t.employerId && t.payoutDate) {
       const key = t.employerId + "|" + t.payoutDate;
       let b = bundleMap[key];
       if (!b) { b = bundleMap[key] = { bundle: true, key, date: t.payoutDate, employerId: t.employerId, category: t.category, amount: 0, items: [], pending: false }; entries.push(b); }
