@@ -401,7 +401,7 @@ async function ensureCategoriesMigrated() {
       const c = normCat(raw);
       if (seen.has(c.name)) continue;
       seen.add(c.name);
-      out.push({ name: c.name, icon: c.icon, color: c.color, ...(c.employerId ? { employerId: c.employerId } : {}), ...(c.creditCardId ? { creditCardId: c.creditCardId } : {}) });
+      out.push({ name: c.name, icon: c.icon, color: c.color, ...(c.employerId ? { employerId: c.employerId } : {}) });
     }
     return out;
   };
@@ -426,13 +426,6 @@ const linkedEmployer = (catName, kind) => {
 };
 // クレジットカードマスタ（締め日・引き落とし日サイクル）
 const creditCardById = (id) => (DB.creditCards?.items || []).find((c) => c.id === id);
-// 支出カテゴリーがクレジットカードに紐づいている場合、そのカードを返す（収入カテゴリーは常にnull）
-const linkedCreditCard = (catName, kind) => {
-  if (kind !== "expense") return null;
-  const meta = catMeta(catName, kind);
-  if (meta.creditCardId) return creditCardById(meta.creditCardId);
-  return (DB.creditCards?.items || []).find((c) => c.linkedCategory === catName) || null;
-};
 // 勤務先に紐づく収入は「稼いだ日」、クレジットカードに紐づく支出は「使った日」ではなく、
 // それぞれ「給料日/引き落とし日（支払い日）」に計上する。カレンダー/一覧はこの日付でグループ化・表示する
 const txDisplayDate = (t) => {
@@ -673,7 +666,6 @@ function categoryModal(kind, initial = {}) {
   const isEdit = !!initial.name;
   const draft = { icon: initial.icon || CAT_ICON_CHOICES[0], color: initial.color || CAT_COLOR_CHOICES[0] };
   const showEmpField = kind === "income" && (DB.employers?.items || []).length > 0;
-  const showCardField = kind === "expense" && (DB.creditCards?.items || []).length > 0;
   return new Promise((resolve) => {
     const box = document.createElement("div");
     const finish = (result) => { box.remove(); resolve(result); };
@@ -691,11 +683,6 @@ function categoryModal(kind, initial = {}) {
         <select name="employerId">
           <option value="">紐づけない</option>
           ${DB.employers.items.map((e) => `<option value="${e.id}" ${initial.employerId === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}
-        </select>` : ""}
-        ${showCardField ? `<label class="f-label">クレジットカードに紐づける（任意）</label>
-        <select name="creditCardId">
-          <option value="">紐づけない</option>
-          ${DB.creditCards.items.map((c) => `<option value="${c.id}" ${initial.creditCardId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
         </select>` : ""}
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
@@ -736,8 +723,7 @@ function categoryModal(kind, initial = {}) {
       const hex = String(fd.get("colorHex") || "").trim();
       const color = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : draft.color;
       const employerId = showEmpField ? (String(fd.get("employerId") || "").trim() || null) : null;
-      const creditCardId = showCardField ? (String(fd.get("creditCardId") || "").trim() || null) : null;
-      finish({ name, icon: draft.icon, color, employerId, creditCardId });
+      finish({ name, icon: draft.icon, color, employerId });
     });
   });
 }
@@ -792,6 +778,10 @@ function txFormModal(initial = {}) {
         <input type="text" name="memo" value="${esc(draft.memo)}" placeholder="任意">
         <label class="f-label">カテゴリー</label>
         <div class="cat-grid" id="txCatGrid">${txCatGridHTML(cats0, draft.category)}</div>
+        <div id="txCardRow" style="display:none">
+          <label class="f-label">支払い方法</label>
+          <div class="tabs" id="txCardTabs"></div>
+        </div>
         <div id="txHoursRow" style="display:none">
           <label class="f-label">勤務時間（時間）</label>
           <input type="number" name="hours" value="${esc(draft.hours)}" placeholder="8" step="0.25" inputmode="decimal">
@@ -805,8 +795,7 @@ function txFormModal(initial = {}) {
     </div></div>`;
     document.body.classList.add("modal-open");
 
-    // 選択中カテゴリーが勤務先/クレジットカードに紐づいていれば、それぞれの情報をdraftに反映する。
-    // 勤務先(収入)は勤務時間欄を出し、時給制ならその場で金額も自動計算する。カード(支出)は特別な欄なし
+    // 選択中カテゴリーが勤務先に紐づいていれば、勤務時間欄を出す。時給制ならその場で金額も自動計算する
     const updateLinkedFields = () => {
       const emp = linkedEmployer(draft.category, draft.kind);
       const row = $("#txHoursRow", wrap);
@@ -815,8 +804,6 @@ function txFormModal(initial = {}) {
         row.style.display = "";
         row.querySelector(".f-label").textContent = emp.wageType === "hourly" ? "勤務時間（時間・自動計算に使用）" : "勤務時間（任意・記録用）";
       }
-      const card = linkedCreditCard(draft.category, draft.kind);
-      draft.creditCardId = card ? card.id : null;
     };
     $("#txHoursRow input[name=hours]", wrap).addEventListener("input", (e) => {
       const emp = draft.employerId && employerById(draft.employerId);
@@ -825,6 +812,25 @@ function txFormModal(initial = {}) {
         $("input[name=amount]", wrap).value = Math.round(h * (Number(emp.hourlyWage) || 0));
       }
     });
+    // 支出のとき、取引ごとに任意で支払い方法（現金 or 登録済みカード）を選べるようにする。
+    // カテゴリーには依存せず、この取引だけの選択（同じカテゴリーでも現金/カード払いを都度選べる）
+    const bindCardTabs = () => {
+      $$("#txCardTabs [data-card]", wrap).forEach((b) => b.addEventListener("click", () => {
+        if (b.classList.contains("active")) return;
+        $$("#txCardTabs [data-card]", wrap).forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        draft.creditCardId = b.dataset.card || null;
+      }));
+    };
+    const updateCardRow = () => {
+      const row = $("#txCardRow", wrap);
+      const cards = DB.creditCards?.items || [];
+      if (isIncome() || !cards.length) { row.style.display = "none"; return; }
+      row.style.display = "";
+      $("#txCardTabs", wrap).innerHTML = `<button type="button" class="tab ${!draft.creditCardId ? "active" : ""}" data-card="">現金</button>`
+        + cards.map((c) => `<button type="button" class="tab ${draft.creditCardId === c.id ? "active" : ""}" data-card="${c.id}">${esc(c.name)}</button>`).join("");
+      bindCardTabs();
+    };
     const bindCatGrid = () => {
       $$("[data-cat]", wrap).forEach((b) => b.addEventListener("click", () => {
         $$("[data-cat]", wrap).forEach((x) => x.classList.remove("active"));
@@ -844,6 +850,7 @@ function txFormModal(initial = {}) {
     };
     bindCatGrid();
     updateLinkedFields();
+    updateCardRow();
 
     wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) finish(null); });
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => finish(null)));
@@ -860,6 +867,7 @@ function txFormModal(initial = {}) {
       $("#txCatGrid", wrap).innerHTML = txCatGridHTML(cats, draft.category);
       bindCatGrid();
       updateLinkedFields();
+      updateCardRow();
       const submit = $("#txSubmit", wrap);
       submit.textContent = isIncome() ? "収入を記録" : "支出を記録";
       submit.style.background = isIncome() ? "" : "var(--red)";
@@ -881,7 +889,7 @@ function txFormModal(initial = {}) {
         category: draft.category,
         employerId: draft.employerId || null,
         hours: draft.employerId ? (Number(fd.get("hours")) || null) : null,
-        creditCardId: draft.creditCardId || null,
+        creditCardId: draft.kind === "expense" ? (draft.creditCardId || null) : null,
       });
     });
   });
@@ -1022,7 +1030,6 @@ function creditCardListHTML(items, pendingMap) {
     return `<div class="card" data-card-open="${c.id}" role="button" tabindex="0" style="cursor:pointer;margin-bottom:12px">
       <h2>${icon("card", 15)} ${esc(c.name)}</h2>
       <p class="small" style="color:var(--muted);margin:2px 0 0">${esc(cycle)}</p>
-      ${c.linkedCategory ? `<p class="small" style="color:var(--muted);margin:4px 0 0">${icon("link", 12)} 支出カテゴリー「${esc(c.linkedCategory)}」と連動</p>` : ""}
       ${p ? `<div class="f-row2" style="margin-top:10px;gap:16px">
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">未確定合計</p><p style="margin:0;font-weight:800">${fmtYen(p.total)}</p></div>
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">次回引き落とし日</p><p style="margin:0;font-weight:800">${fmtDateFull(p.nextChargeDate)}</p></div>
@@ -1033,7 +1040,6 @@ function creditCardListHTML(items, pendingMap) {
 // クレジットカードを追加・編集するモーダル（締め日・引き落とし日は常に月次サイクル）
 function creditCardModal(initial = {}) {
   const isEdit = !!initial.id;
-  const expenseCats = moneyCatList("expense");
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
     const finish = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
@@ -1048,12 +1054,7 @@ function creditCardModal(initial = {}) {
           <span class="f-sep">→ 翌</span>
           <input type="number" name="paymentDay" value="${esc(initial.paymentDay ?? 27)}" min="1" max="31" placeholder="27日引き落とし">
         </div>
-        <label class="f-label">連動する支出カテゴリー（任意）</label>
-        <select name="linkedCategory">
-          <option value="">連動しない</option>
-          ${expenseCats.map((c) => `<option value="${esc(c.name)}" ${initial.linkedCategory === c.name ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
-        </select>
-        <p class="hint" style="margin-top:8px">ここで選んだ支出カテゴリーで記録した支出は、口座残高には反映されず「引き落とし予定」になり、引き落とし日が来たら自動で残高から引かれます。</p>
+        <p class="hint" style="margin-top:8px">取引を記録するときに、この中から支払い方法として選べます。選んだ支出は口座残高には反映されず「引き落とし予定」になり、引き落とし日が来たら自動で残高から引かれます。</p>
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
@@ -1077,7 +1078,6 @@ function creditCardModal(initial = {}) {
         name,
         closingDay: Number(fd.get("closingDay")) || 31,
         paymentDay: Number(fd.get("paymentDay")) || 27,
-        linkedCategory: String(fd.get("linkedCategory") || "").trim() || null,
       });
     });
   });
@@ -1919,7 +1919,7 @@ function categoryManageModal(initialKind) {
       box.querySelector("[data-cat-add]").addEventListener("click", async () => {
         const v = await categoryModal(kind);
         if (!v || v.__delete) return;
-        DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) }];
+        DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) }];
         try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
         render();
       });
@@ -1930,7 +1930,7 @@ function categoryManageModal(initialKind) {
           const v = await categoryModal(kind, cur);
           if (!v) return;
           if (v.__delete) DB.categories[kind].splice(i, 1);
-          else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) };
+          else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) };
           try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
           render();
         }));
@@ -1986,7 +1986,7 @@ VIEWS.categories = {
     $("#catAdd").addEventListener("click", async () => {
       const v = await categoryModal(kind);
       if (!v || v.__delete) return;
-      DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) }];
+      DB.categories[kind] = [...(DB.categories[kind] || []), { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) }];
       try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
       rerender();
     });
@@ -1999,7 +1999,7 @@ VIEWS.categories = {
         const v = await categoryModal(kind, cur);
         if (!v) return;
         if (v.__delete) DB.categories[kind].splice(i, 1);
-        else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}), ...(v.creditCardId ? { creditCardId: v.creditCardId } : {}) };
+        else DB.categories[kind][i] = { name: v.name, icon: v.icon, color: v.color, ...(v.employerId ? { employerId: v.employerId } : {}) };
         try { await saveDb("categories"); } catch (e) { toast(e.message, "x"); return; }
         rerender();
       }));
@@ -2097,7 +2097,7 @@ VIEWS.settings = {
 
       <div class="card">
         <h2>${icon("card", 15)} クレジットカード</h2>
-        <p class="small" style="color:var(--muted);margin:-2px 0 12px">締め日・引き落とし日を登録すると、支出を記録しても口座残高にはすぐ反映されず「引き落とし予定」になります。引き落とし日を過ぎると自動で確定（残高から反映）されます。</p>
+        <p class="small" style="color:var(--muted);margin:-2px 0 12px">締め日・引き落とし日を登録すると、支出を記録するときに支払い方法として選べるようになります。カードで払った支出は口座残高にはすぐ反映されず「引き落とし予定」になり、引き落とし日を過ぎると自動で確定（残高から反映）されます。</p>
         <div id="cardList">${creditCardListHTML(DB.creditCards.items, cardPendingMap)}</div>
         <button class="btn ghost sm" id="addCard" style="margin-top:10px">${icon("plus", 13)} クレジットカードを追加</button>
       </div>`;
@@ -2208,17 +2208,10 @@ VIEWS.settings = {
     });
 
     // クレジットカードの追加・編集
-    // 同じ支出カテゴリーは1つのカードにだけ連動させる（他のカードから外す）
-    const dedupCardLinkedCategory = (catName, keepId) => {
-      if (!catName) return;
-      DB.creditCards.items.forEach((x) => { if (x.id !== keepId && x.linkedCategory === catName) x.linkedCategory = null; });
-    };
     $("#addCard").addEventListener("click", async () => {
       const v = await creditCardModal({});
       if (!v) return;
-      const nu = { id: uid(), ...v };
-      dedupCardLinkedCategory(nu.linkedCategory, nu.id);
-      DB.creditCards.items.push(nu);
+      DB.creditCards.items.push({ id: uid(), ...v });
       await saveDb("creditCards");
       rerender();
     });
@@ -2232,7 +2225,6 @@ VIEWS.settings = {
           DB.creditCards.items = DB.creditCards.items.filter((x) => x.id !== c.id);
         } else {
           Object.assign(c, v);
-          dedupCardLinkedCategory(c.linkedCategory, c.id);
         }
         await saveDb("creditCards");
         rerender();
