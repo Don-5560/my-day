@@ -266,6 +266,27 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 @media (max-width: 960px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
 
+/* ===== セクション（カードを廃止したフラットリスト＋アコーディオン） ===== */
+/* .card の箱（背景/枠線/影/角丸）をやめ、見出し＋横線区切りだけにして余白を減らす。
+   開閉はJSでclassList/displayを直接切り替える（作り直すとチカチカするため、他のモーダル類と同じ方針） */
+.section-list { border-top: 1px solid var(--line); }
+.section { border-bottom: 1px solid var(--line); }
+.section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 15px 2px; background: none; border: none; font: inherit;
+  text-align: left; cursor: pointer; color: inherit; -webkit-tap-highlight-color: transparent;
+}
+.section-head h2 {
+  margin: 0; font-size: 14px; font-weight: 700; color: var(--ink);
+  display: flex; align-items: center; gap: 9px;
+}
+.section-head h2 .ic { color: var(--accent); }
+.section-sub { margin: 2px 0 0 27px; font-size: 12.5px; color: var(--muted); }
+.section-chevron { color: var(--faint); display: inline-flex; flex: 0 0 auto; transition: transform .18s; }
+.section.open > .section-head .section-chevron { transform: rotate(90deg); }
+.section-body { padding: 2px 2px 18px; }
+.section-highlight { font-size: 26px; font-weight: 800; }
+
 /* ===== 今日のタスク（サマリー） ===== */
 
 .task-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

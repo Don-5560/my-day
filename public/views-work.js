@@ -1845,6 +1845,8 @@ async function templateModal(initial = {}) {
 // ===== カテゴリー管理（支出/収入の追加・編集・削除・並べ替え） =====
 let CAT_TAB = "expense"; // "expense" | "income"
 let CAT_EDIT = false;    // 編集モード（削除ボタン＋並べ替えハンドルを表示）
+// 設定ページのセクション開閉状態（アコーディオン）。初期は全部開いた状態にする
+const SETTINGS_OPEN = new Set(["profile", "goals", "tasks", "employers", "creditCards", "data", "account"]);
 
 // リストの並べ替え（タッチ/マウス両対応）。ハンドルをドラッグして順序を入れ替える。
 function makeSortable(listEl, handleSel, itemSel, onReorder) {
@@ -2037,11 +2039,22 @@ VIEWS.settings = {
     await ensureUberEmployerMigrated();
     const empPendingMap = Object.fromEntries(empPending.map((p) => [p.employerId, p]));
     const cardPendingMap = Object.fromEntries(cardPending.map((p) => [p.creditCardId, p]));
+    const sec = (key, title, ic, bodyHtml, sub) => {
+      const open = SETTINGS_OPEN.has(key);
+      return `<div class="section ${open ? "open" : ""}">
+        <button type="button" class="section-head" data-sec-toggle="${key}">
+          <h2>${icon(ic, 15)} ${esc(title)}</h2>
+          <span class="section-chevron">${icon("chevR", 14)}</span>
+        </button>
+        ${sub ? `<p class="section-sub">${sub}</p>` : ""}
+        <div class="section-body" id="sec-${key}" style="${open ? "" : "display:none"}">${bodyHtml}</div>
+      </div>`;
+    };
     main.innerHTML = `
       <div class="page-head"><div><p class="eyebrow">Settings</p><h1>設定</h1></div></div>
 
-      <div class="card">
-        <h2>${icon("home", 15)} プロフィール & 外観</h2>
+      <div class="section-list">
+      ${sec("profile", "プロフィール & 外観", "home", `
         <label class="f-label">お名前（ホームの挨拶に使われます）</label>
         <input type="text" id="sName" value="${esc(DB.settings.name || "")}" placeholder="しどう">
         <label class="f-label">テーマ</label>
@@ -2050,10 +2063,8 @@ VIEWS.settings = {
           <button type="button" data-theme-val="dark" class="${currentTheme() === "dark" ? "active" : ""}">${icon("moon", 15)} ダーク</button>
         </div>
         <div style="margin-top:14px"><button class="btn" id="saveName">${icon("checkline", 14)} 保存</button></div>
-      </div>
-
-      <div class="card">
-        <h2>${icon("target", 15)} 目標設定</h2>
+      `)}
+      ${sec("goals", "目標設定", "target", `
         <label class="f-label">今日の目標</label>
         <input type="text" id="sToday" value="${esc(DB.settings.todayGoal)}" placeholder="例: LP制作を2時間">
         <label class="f-label">今月の目標</label>
@@ -2061,46 +2072,52 @@ VIEWS.settings = {
         <label class="f-label">月間売上目標（円）</label>
         <input type="number" id="sSales" value="${DB.settings.salesGoal || 0}">
         <div style="margin-top:14px"><button class="btn" id="saveS">${icon("checkline", 14)} 保存</button></div>
-      </div>
-
-      <div class="card">
-        <h2>${icon("check", 15)} 毎日の定番タスク</h2>
+      `)}
+      ${sec("tasks", "毎日の定番タスク", "check", `
         <div id="tplList">${templateListHTML(recurring)}</div>
         <button class="btn ghost sm" id="tplAdd" style="margin-top:10px">${icon("plus", 13)} 定番タスクを追加</button>
+      `)}
+      <div class="section">
+        <button type="button" class="section-head" id="catManageCard">
+          <h2>${icon("grid", 15)} カテゴリー</h2>
+          <span class="section-chevron">${icon("chevR", 14)}</span>
+        </button>
+        <p class="section-sub" style="margin-bottom:14px">収入・支出のカテゴリーを追加・編集・並べ替えできます</p>
       </div>
-
-      <div class="card" id="catManageCard" role="button" tabindex="0" style="cursor:pointer">
-        <h2>${icon("grid", 15)} カテゴリー</h2>
-        <p class="small" style="color:var(--muted);margin:-2px 0 0">収入・支出のカテゴリーを追加・編集・並べ替えできます ${icon("chevR", 13)}</p>
-      </div>
-
-      <div class="card">
-        <h2>${icon("briefcase", 15)} 勤務先</h2>
-        <p class="small" style="color:var(--muted);margin:-2px 0 12px">給与体系や支払いサイクルを登録すると、収支ページで収入を記録するときに自動で計算・入金管理ができます。給料日を過ぎると自動で入金確定（未収→残高に反映）されます。</p>
+      ${sec("employers", "勤務先", "briefcase", `
+        <p class="small" style="color:var(--muted);margin:0 0 12px">給与体系や支払いサイクルを登録すると、収支ページで収入を記録するときに自動で計算・入金管理ができます。給料日を過ぎると自動で入金確定（未収→残高に反映）されます。</p>
         <div id="empList">${employerListHTML(DB.employers.items, empPendingMap)}</div>
         <button class="btn ghost sm" id="addEmp" style="margin-top:10px">${icon("plus", 13)} 勤務先を追加</button>
-      </div>
-
-      <div class="card">
-        <h2>${icon("download", 15)} データ</h2>
+      `)}
+      ${sec("creditCards", "クレジットカード", "card", `
+        <p class="small" style="color:var(--muted);margin:0 0 12px">締め日・引き落とし日を登録すると、支出を記録するときに支払い方法として選べるようになります。カードで払った支出は口座残高にはすぐ反映されず「引き落とし予定」になり、引き落とし日を過ぎると自動で確定（残高から反映）されます。</p>
+        <div id="cardList">${creditCardListHTML(DB.creditCards.items, cardPendingMap)}</div>
+        <button class="btn ghost sm" id="addCard" style="margin-top:10px">${icon("plus", 13)} クレジットカードを追加</button>
+      `)}
+      ${sec("data", "データ", "download", `
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn ghost" id="exportJson">${icon("download", 14)} 全データをエクスポート</button>
           <button class="btn ghost" id="copyAI">${icon("copy", 14)} 直近7日をAI用にコピー</button>
         </div>
         <p class="hint" style="margin-top:10px">エクスポートはバックアップとしても使えます。テーマ/カラー変更・通知は今後追加予定。</p>
-      </div>
-
-      <div class="card">
-        <h2>${icon("logout", 15)} アカウント</h2>
+      `)}
+      ${sec("account", "アカウント", "logout", `
         <button class="btn danger" id="logout">${icon("logout", 14)} ログアウト</button>
-      </div>
-
-      <div class="card">
-        <h2>${icon("card", 15)} クレジットカード</h2>
-        <p class="small" style="color:var(--muted);margin:-2px 0 12px">締め日・引き落とし日を登録すると、支出を記録するときに支払い方法として選べるようになります。カードで払った支出は口座残高にはすぐ反映されず「引き落とし予定」になり、引き落とし日を過ぎると自動で確定（残高から反映）されます。</p>
-        <div id="cardList">${creditCardListHTML(DB.creditCards.items, cardPendingMap)}</div>
-        <button class="btn ghost sm" id="addCard" style="margin-top:10px">${icon("plus", 13)} クレジットカードを追加</button>
+      `)}
       </div>`;
+
+    // セクションの開閉（アコーディオン）。作り直さずその場でクラス/表示だけ切り替える
+    $$("[data-sec-toggle]", main).forEach((head) => {
+      head.addEventListener("click", () => {
+        const key = head.dataset.secToggle;
+        const body = $("#sec-" + key, main);
+        const section = head.closest(".section");
+        if (SETTINGS_OPEN.has(key)) SETTINGS_OPEN.delete(key); else SETTINGS_OPEN.add(key);
+        const open = SETTINGS_OPEN.has(key);
+        section.classList.toggle("open", open);
+        body.style.display = open ? "" : "none";
+      });
+    });
 
     // テーマ切替（即時反映＋端末に記憶）
     $("#themeToggle").addEventListener("click", (e) => {
