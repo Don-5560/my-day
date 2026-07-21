@@ -230,6 +230,16 @@ export const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "get_budget_plan",
+    description: "「予想収支」タブの内容を取得する。現在の残高と、予想収入/予想出費/残高チェックポイントの各ブロック（タイトル・内訳項目・その時点での累計予想残高）を返す。get_balance/get_overviewには含まれない。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_employers",
+    description: "勤務先（バイト先/取引先）の一覧を取得する。給与体系（時給制/歩合制、時給額）・支払いサイクル（週払い/月払いと締め日・支払日・支払い曜日）・連動している収入カテゴリー・現在の未収合計・次回入金日を返す。get_balance/get_overviewには含まれない。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "set_templates",
     description: "定番タスクを設定する。recurring配列: {title, days, time}。daysは 'daily' か曜日配列(['mon','wed'])。timeは任意の開始時刻 'HH:MM'。",
     inputSchema: {
@@ -396,6 +406,54 @@ export async function callTool(name, args = {}) {
 
     case "set_templates":
       return store.saveTemplates({ recurring: args.recurring });
+
+    case "get_budget_plan": {
+      const [budgetDoc, fin] = await Promise.all([store.getDoc("budgetplan"), store.financeSummary()]);
+      const blocks = budgetDoc?.blocks ?? [];
+      let running = fin.currentBalance;
+      const out = blocks.map((b) => {
+        if (b.type === "balance") {
+          return { id: b.id, type: "balance", title: b.title || "予想残高", runningBalance: running };
+        }
+        const total = (b.items ?? []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        running += b.type === "income" ? total : -total;
+        return {
+          id: b.id,
+          type: b.type,
+          title: b.title || (b.type === "income" ? "予想収入" : "予想出費"),
+          total,
+          runningBalance: running,
+          items: (b.items ?? []).map((i) => ({
+            id: i.id, label: i.label, amount: i.amount, from: i.from || "", to: i.to || "",
+            breakdown: (i.breakdown ?? []).map((bd) => ({ name: bd.name, amount: bd.amount, note: bd.note || "" })),
+          })),
+        };
+      });
+      return { currentBalance: fin.currentBalance, blocks: out, finalProjectedBalance: running };
+    }
+
+    case "get_employers": {
+      const [empDoc, pending] = await Promise.all([store.getDoc("employers"), store.employerPendingSummary()]);
+      const pendingMap = Object.fromEntries(pending.map((p) => [p.employerId, p]));
+      const items = (empDoc?.items ?? []).map((e) => {
+        const p = pendingMap[e.id];
+        return {
+          id: e.id,
+          name: e.name,
+          location: e.location || "",
+          wageType: e.wageType,
+          hourlyWage: e.hourlyWage ?? null,
+          payCycle: e.payCycle,
+          weeklyPayDay: e.weeklyPayDay ?? null,
+          closingDay: e.closingDay ?? null,
+          paymentDay: e.paymentDay ?? null,
+          linkedCategory: e.linkedCategory || null,
+          pendingTotal: p?.total ?? 0,
+          nextPayoutDate: p?.nextPayoutDate ?? null,
+        };
+      });
+      return { items };
+    }
 
     default:
       throw new Error(`未知のツール: ${name}`);
