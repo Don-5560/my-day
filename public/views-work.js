@@ -2001,7 +2001,7 @@ VIEWS.categories = {
         <button class="tab ${kind === "income" ? "active" : ""}" data-ctab="income">収入</button>
       </div>
       <button class="btn ghost" id="catAdd" style="width:100%;justify-content:flex-start;margin-bottom:14px">${icon("plus", 16)} 新規カテゴリーの追加</button>
-      <div class="card" style="padding:6px 14px"><div id="catList">${catRowsHTML(cats, CAT_EDIT)}</div></div>`;
+      <div class="section-list"><div id="catList">${catRowsHTML(cats, CAT_EDIT)}</div></div>`;
 
     $("#catBack").addEventListener("click", () => go("settings"));
     $("#catEditToggle").addEventListener("click", () => { CAT_EDIT = !CAT_EDIT; rerender(); });
