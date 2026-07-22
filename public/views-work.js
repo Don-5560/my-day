@@ -1231,9 +1231,10 @@ VIEWS.money = {
       for (const t of list) m[t.category] = (m[t.category] || 0) + t.amount;
       return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
     };
-    // 内訳もpending分を含めて集計する（残高・収支サマリーと基準を揃える）
-    const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
-    const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
+    // 内訳は確定分（未収の収入/引き落とし待ちの支出を除く）だけを集計する。残高・収支サマリーと基準を揃える
+    const confirmedTxs = txs.filter((t) => t.payoutStatus !== "pending");
+    const incomeRows = groupByCat(confirmedTxs.filter((t) => t.type === "income"));
+    const expenseRows = groupByCat(confirmedTxs.filter((t) => t.type === "expense"));
 
     // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
     let running = fin.currentBalance;
@@ -1312,8 +1313,7 @@ VIEWS.money = {
         </div>
       </div>
       <div class="section">
-        <p class="section-title" style="margin-top:16px">${icon("calendar", 15)} 取引${MONEY_CAL_DAY ? `（${fmtDateFull(MONEY_CAL_DAY)}）` : ""}</p>
-        <div id="txListWrap" style="padding-bottom:18px">${moneyTxListHTML(txs, MONEY_CAL_DAY)}</div>
+        <div id="txListWrap" style="padding-top:16px;padding-bottom:18px">${moneyTxListHTML(txs, MONEY_CAL_DAY)}</div>
       </div>
       </div>` : `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">ブロックを自由に追加して、時系列で予想の収支を組み立てられます。内容は保存され、あとから見返せます。</p>
