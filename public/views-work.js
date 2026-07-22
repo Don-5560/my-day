@@ -1176,7 +1176,11 @@ VIEWS.money = {
       <div class="section-list">
       <div class="section">
         <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 残高</p>
-        <p class="section-highlight" style="margin-bottom:18px">${signedYen(fin.currentBalance)}</p>
+        <p class="section-highlight" style="margin-bottom:14px">${signedYen(fin.currentBalance)}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;border-top:1px solid var(--line);margin-top:2px;padding:12px 0 18px">
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入合計（全期間・確定分）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.totalIncome)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出合計（全期間・確定分）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.totalExpense)}</p></div>
+        </div>
       </div>
       <div class="section">
         <div style="padding:16px 0 18px">
