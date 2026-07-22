@@ -300,16 +300,21 @@ VIEWS.home = {
         </div>
       </div>
 
-      <div class="card task-summary">
-        <div class="ts-main">
-          <div class="ts-label">今日のタスク</div>
-          <div class="ts-count"><span id="tsCount">${done}</span> <small>/ <span id="tsTotal">${total}</span> 完了</small></div>
-          <div class="bar"><i id="tsBar" style="width:${dayPct}%"></i></div>
+      <div class="section-list">
+      <div class="section">
+        <div class="task-summary" style="padding:16px 0 18px">
+          <div class="ts-main">
+            <div class="ts-label">今日のタスク</div>
+            <div class="ts-count"><span id="tsCount">${done}</span> <small>/ <span id="tsTotal">${total}</span> 完了</small></div>
+            <div class="bar"><i id="tsBar" style="width:${dayPct}%"></i></div>
+          </div>
+          <button class="btn ghost sm" id="addTask">${icon("plus", 14)} 追加</button>
         </div>
-        <button class="btn ghost sm" id="addTask">${icon("plus", 14)} 追加</button>
       </div>
-
-      <div class="card" id="schedCard"><!-- 予定は mountSchedule() が日付ごとに描画 --></div>
+      <div class="section">
+        <div id="schedCard" style="padding:16px 0 18px"><!-- 予定は mountSchedule() が日付ごとに描画 --></div>
+      </div>
+      </div>
 
       <div class="home-stats">
         ${homeStat("勉強時間 (今日)", studyToday ? fmtHM(studyToday) : "0m", "目標: " + fmtHM(S.dailyStudyGoalMin || 360), "timer")}
@@ -317,19 +322,23 @@ VIEWS.home = {
         ${homeStat("連続記録", streak() + "日", "ベスト: " + bestStreakVal() + "日", "flame")}
       </div>
 
-      <div class="card">
-        <div class="card-head"><h2>${icon("flame", 15)} 最近の活動</h2>
-          <div style="display:flex;gap:10px;align-items:center">
-            <button class="link-more" data-go="analytics">すべて見る ${icon("chevR", 12)}</button>
-            <button class="btn sm" id="logActivity">${icon("plus", 13)} 記録</button>
-          </div></div>
-        ${acts.map((e) => {
-          const b = activityBadge(e.why);
-          return `<div class="list-item">
-            <div class="li-body"><div class="li-title" style="white-space:normal">${esc(e.why)}</div></div>
-            <div class="li-right">${b ? `<span class="pill ${b.cls}">${b.label}</span>` : ""}<span class="li-meta">${relTime(e.ts)}</span></div>
-          </div>`;
-        }).join("") || '<p class="empty">まだ活動がありません。タスクを完了するとここに出ます。</p>'}
+      <div class="section-list">
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <div class="card-head"><h2 class="section-title" style="margin-bottom:0">${icon("flame", 15)} 最近の活動</h2>
+            <div style="display:flex;gap:10px;align-items:center">
+              <button class="link-more" data-go="analytics">すべて見る ${icon("chevR", 12)}</button>
+              <button class="btn sm" id="logActivity">${icon("plus", 13)} 記録</button>
+            </div></div>
+          ${acts.map((e) => {
+            const b = activityBadge(e.why);
+            return `<div class="list-item">
+              <div class="li-body"><div class="li-title" style="white-space:normal">${esc(e.why)}</div></div>
+              <div class="li-right">${b ? `<span class="pill ${b.cls}">${b.label}</span>` : ""}<span class="li-meta">${relTime(e.ts)}</span></div>
+            </div>`;
+          }).join("") || '<p class="empty">まだ活動がありません。タスクを完了するとここに出ます。</p>'}
+        </div>
+      </div>
       </div>`;
 
     // 上部「今日のタスク」サマリーの数値を更新（常に今日基準）
