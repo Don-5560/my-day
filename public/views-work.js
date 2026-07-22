@@ -902,15 +902,15 @@ function employerListHTML(items, pendingMap) {
     const p = pendingMap[e.id];
     const wage = e.wageType === "hourly" ? `時給¥${Number(e.hourlyWage || 0).toLocaleString()}` : "歩合制";
     const cycle = e.payCycle === "weekly" ? `週払い（${WD_SHORT[WD_KEYS.indexOf(e.weeklyPayDay)] || ""}曜日）` : `月払い（${e.closingDay || 31}日締め翌${e.paymentDay || 25}日払い）`;
-    return `<div class="card" data-emp-open="${e.id}" role="button" tabindex="0" style="cursor:pointer;margin-bottom:12px">
-      <h2>${icon("briefcase", 15)} ${esc(e.name)}</h2>
+    return `<button type="button" class="flat-row" data-emp-open="${e.id}">
+      <p class="section-title" style="margin-bottom:2px">${icon("briefcase", 15)} ${esc(e.name)}</p>
       <p class="small" style="color:var(--muted);margin:2px 0 0">${esc(wage)}・${esc(cycle)}</p>
       ${e.linkedCategory ? `<p class="small" style="color:var(--muted);margin:4px 0 0">${icon("link", 12)} 収入カテゴリー「${esc(e.linkedCategory)}」と連動</p>` : ""}
       ${p ? `<div class="f-row2" style="margin-top:10px;gap:16px">
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">未収合計</p><p style="margin:0;font-weight:800">${fmtYen(p.total)}</p></div>
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">次回入金日</p><p style="margin:0;font-weight:800">${fmtDateFull(p.nextPayoutDate)}</p></div>
       </div>` : ""}
-    </div>`;
+    </button>`;
   }).join("");
 }
 // 勤務先を追加・編集するモーダル。給与形態・支払いサイクルの切替はDOM直接書き換え（チカチカ防止）
@@ -1027,14 +1027,14 @@ function creditCardListHTML(items, pendingMap) {
   return items.map((c) => {
     const p = pendingMap[c.id];
     const cycle = `${c.closingDay || 31}日締め翌${c.paymentDay || 27}日引き落とし`;
-    return `<div class="card" data-card-open="${c.id}" role="button" tabindex="0" style="cursor:pointer;margin-bottom:12px">
-      <h2>${icon("card", 15)} ${esc(c.name)}</h2>
+    return `<button type="button" class="flat-row" data-card-open="${c.id}">
+      <p class="section-title" style="margin-bottom:2px">${icon("card", 15)} ${esc(c.name)}</p>
       <p class="small" style="color:var(--muted);margin:2px 0 0">${esc(cycle)}</p>
       ${p ? `<div class="f-row2" style="margin-top:10px;gap:16px">
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">未確定合計</p><p style="margin:0;font-weight:800">${fmtYen(p.total)}</p></div>
         <div><p class="small" style="color:var(--muted);margin:0 0 2px">次回引き落とし日</p><p style="margin:0;font-weight:800">${fmtDateFull(p.nextChargeDate)}</p></div>
       </div>` : ""}
-    </div>`;
+    </button>`;
   }).join("");
 }
 // クレジットカードを追加・編集するモーダル（締め日・引き落とし日は常に月次サイクル）
@@ -1130,18 +1130,20 @@ VIEWS.money = {
     let running = fin.currentBalance;
     const blocksHtml = DB.budgetplan.blocks.map((b) => {
       if (b.type === "balance") {
-        return `<div class="card plan-balance-card" data-block-open="${b.id}" role="button" tabindex="0" style="margin-top:14px;cursor:pointer">
-          <h2>${icon("chart", 15)} ${esc(b.title || "予想残高")}</h2>
+        return `<button type="button" class="flat-row" data-block-open="${b.id}">
+          <p class="section-title" style="margin-bottom:0">${icon("chart", 15)} ${esc(b.title || "予想残高")}</p>
           <p style="margin:4px 0 0;font-size:26px;font-weight:800;color:${running < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(running)}</p>
-        </div>`;
+        </button>`;
       }
       const total = b.items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
       running += b.type === "income" ? total : -total;
-      return `<div class="card" style="margin-top:14px">
-        <h2 data-block-open="${b.id}" role="button" tabindex="0" style="cursor:pointer">${icon("layers", 15)} ${esc(b.title || (b.type === "income" ? "予想収入" : "予想出費"))}</h2>
-        ${planItemsHTML(b.items, b.id, b.type)}
-        <button class="btn ghost sm" data-item-add="${b.id}" data-kind="${b.type}" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
-        <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(total)}</strong></p>
+      return `<div class="section">
+        <p class="section-title" data-block-open="${b.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:16px">${icon("layers", 15)} ${esc(b.title || (b.type === "income" ? "予想収入" : "予想出費"))}</p>
+        <div style="padding-bottom:16px">
+          ${planItemsHTML(b.items, b.id, b.type)}
+          <button class="btn ghost sm" data-item-add="${b.id}" data-kind="${b.type}" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
+          <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(total)}</strong></p>
+        </div>
       </div>`;
     }).join("");
 
@@ -1161,37 +1163,41 @@ VIEWS.money = {
       ${MONEY_TAB === "breakdown" ? `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月の内訳です。月を変えたい場合は「収支」タブで移動してください。</p>
       <div class="grid2">
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入（内訳）</h2>${hbars(incomeRows, fmtYen)}</div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 支出（内訳）</h2>${hbars(expenseRows, fmtYen)}</div>
+        <div><p class="section-title">${icon("layers", 15)} 収入（内訳）</p>${hbars(incomeRows, fmtYen)}</div>
+        <div><p class="section-title">${icon("layers", 15)} 支出（内訳）</p>${hbars(expenseRows, fmtYen)}</div>
       </div>` : MONEY_TAB === "actual" ? `
-      <div class="card" style="margin-bottom:18px">
-        <h2>${icon("wallet", 15)} 残高</h2>
-        <p style="margin:4px 0 0;font-size:28px;font-weight:800">${signedYen(fin.currentBalance)}</p>
+      <div class="section-list">
+      <div class="section">
+        <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 残高</p>
+        <p class="section-highlight" style="margin-bottom:18px">${signedYen(fin.currentBalance)}</p>
       </div>
-      <div class="card" style="margin-bottom:18px">
-        <div class="cal-nav" style="margin-bottom:10px">
-          <button class="icon-btn" id="mcalPrev">${icon("chevR", 16, "flip")}</button>
-          <button class="btn ghost sm" id="mcalToday">今月</button>
-          <button class="icon-btn" id="mcalNext">${icon("chevR", 16)}</button>
-          <span class="cal-title">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月</span>
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <div class="cal-nav" style="margin-bottom:10px">
+            <button class="icon-btn" id="mcalPrev">${icon("chevR", 16, "flip")}</button>
+            <button class="btn ghost sm" id="mcalToday">今月</button>
+            <button class="icon-btn" id="mcalNext">${icon("chevR", 16)}</button>
+            <span class="cal-title">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月</span>
+          </div>
+          ${moneyCalGridHTML(mk, txs)}
         </div>
-        ${moneyCalGridHTML(mk, txs)}
       </div>
-      <div class="card" style="margin-bottom:18px">
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
+      <div class="section">
+        <div style="padding:16px 0 18px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--green)">${fmtYen(fin.incomeThisMonth)}</p></div>
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--red)">${fmtYen(fin.expenseThisMonth)}</p></div>
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:16.5px;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--ink)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
         </div>
       </div>
-      <div class="card" style="margin-top:18px">
-        <h2>${icon("calendar", 15)} 取引${MONEY_CAL_DAY ? `（${fmtDateFull(MONEY_CAL_DAY)}）` : ""}</h2>
-        <div id="txListWrap">${moneyTxListHTML(txs, MONEY_CAL_DAY)}</div>
+      <div class="section">
+        <p class="section-title" style="margin-top:16px">${icon("calendar", 15)} 取引${MONEY_CAL_DAY ? `（${fmtDateFull(MONEY_CAL_DAY)}）` : ""}</p>
+        <div id="txListWrap" style="padding-bottom:18px">${moneyTxListHTML(txs, MONEY_CAL_DAY)}</div>
+      </div>
       </div>` : `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">ブロックを自由に追加して、時系列で予想の収支を組み立てられます。内容は保存され、あとから見返せます。</p>
-      <div class="card" style="margin-bottom:0">
-        <h2>${icon("wallet", 15)} 現在の残高</h2>
-        <p style="margin:4px 0 0;font-size:26px;font-weight:800">${signedYen(fin.currentBalance)}</p>
+      <div class="section">
+        <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 現在の残高</p>
+        <p class="section-highlight" style="margin-bottom:18px">${signedYen(fin.currentBalance)}</p>
       </div>
       ${blocksHtml}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
