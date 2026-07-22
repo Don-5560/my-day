@@ -4,7 +4,7 @@
 window.VIEWS = window.VIEWS || {};
 
 const NAV_GROUPS = [
-  { label: "メイン", items: ["home", "todo", "time", "report", "habits"] },
+  { label: "メイン", items: ["home", "todo", "time", "reminders", "report", "habits"] },
   { label: "ワーク", items: ["projects", "outreach", "sales", "money", "portfolio", "learning"] },
   { label: "グロース", items: ["goals", "badges", "analytics", "calendar"] },
   { label: "", items: ["settings"] },
@@ -14,7 +14,7 @@ const BOTTOM_NAV = ["calendar", "todo", "home", "money", "menu"];
 const DRAWER_GROUPS = [
   { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
   { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"]] },
-  { label: "人生・習慣", items: [["goals", "目標管理"], ["badges", "実績・バッジ"]] },
+  { label: "人生・習慣", items: [["goals", "目標管理"], ["badges", "実績・バッジ"], ["reminders", "リマインダー"]] },
   { label: "分析・レポート", items: [["report", "日報"], ["analytics", "分析・レポート"]] },
 ];
 
@@ -57,12 +57,19 @@ function attachSwipe(el, cb) {
     if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) cb(dx > 0 ? "right" : "left");
   }, { passive: true });
 }
+// 優先度ピル。中/未設定は表示しない（一覧が煩雑になるのを避ける）
+function priPill(pri) {
+  if (pri === "高") return `<span class="pill red">高</span>`;
+  if (pri === "低") return `<span class="pill">低</span>`;
+  return "";
+}
 // 予定カード1行のHTML。タイマーボタンは今日のみ表示。
 function schedItemHTML(t, isToday) {
   const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "var(--line)";
   const pm = planMin(t);
   const badges = [
     t.cat ? `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>` : "",
+    priPill(t.pri),
     t.source === "template" ? '<span class="pill">定番</span>' : t.source === "ai" ? '<span class="pill acc">AI</span>' : "",
     ...(t.tags || []).map((tag) => `<span class="pill">#${esc(tag)}</span>`),
     t.spentMin ? `<span class="pill grn">${icon("timer", 10)} 実績 ${fmtHM(t.spentMin)}</span>` : "",
@@ -95,6 +102,7 @@ function taskDetailModal(t, opts = {}) {
       ["時間", range + (pm ? `（${fmtHM(pm)}）` : "")],
       t.spentMin ? ["実績", fmtHM(t.spentMin)] : null,
       t.cat ? ["カテゴリー", `<span class="pill" style="color:${catCol};background:color-mix(in srgb, ${catCol} 15%, transparent)">${esc(t.cat)}</span>`] : null,
+      t.pri ? ["優先度", `<span class="pill ${t.pri === "高" ? "red" : ""}">${esc(t.pri)}</span>`] : null,
       (t.tags && t.tags.length) ? ["タグ", t.tags.map((x) => `<span class="pill">#${esc(x)}</span>`).join(" ")] : null,
       ["状態", t.done ? "✅ 完了" : "未完了"],
     ].filter(Boolean);
@@ -285,6 +293,7 @@ VIEWS.home = {
     const studyToday = DB.study.logs.filter((l) => l.date === todayStr()).reduce((s, l) => s + l.min, 0);
     const salesToday = DB.sales.logs.filter((l) => l.date === todayStr()).reduce((s, l) => s + l.amount, 0);
     const acts = [...DB.xp.events].slice(-6).reverse();
+    const dueRem = dueReminders();
 
     main.innerHTML = `
       <div class="greet">
@@ -295,10 +304,26 @@ VIEWS.home = {
             <span id="clock" class="gn-time">${new Date().toTimeString().slice(0, 8)}</span>
           </div>
         </div>
-        <div class="greet-sub">
+        <div class="greet-sub" style="flex-wrap:wrap">
           <p>${esc(S.todayGoal) || "今日も最高の1日にしよう。"}</p>
+          ${S.monthGoal ? `<p>${icon("target", 12)} 今月: ${esc(S.monthGoal)}</p>` : ""}
         </div>
       </div>
+
+      ${dueRem.length ? `
+      <div class="section-list"><div class="section">
+        <p class="section-title" style="margin-top:16px;color:var(--red)">${icon("bell", 15)} リマインダー（${dueRem.length}）</p>
+        <div style="padding-bottom:16px">
+          ${dueRem.map((r) => `<div class="list-item">
+            <input type="checkbox" class="checkbox" data-remdone="${r.id}">
+            <div class="li-body">
+              <div class="li-title">${esc(r.title)}</div>
+              ${r.memo ? `<div class="li-memo">${esc(r.memo)}</div>` : ""}
+            </div>
+            <span class="pill red">${r.date < todayStr() ? "期限切れ" : esc(r.time || "")}</span>
+          </div>`).join("")}
+        </div>
+      </div></div>` : ""}
 
       <div class="section-list">
       <div class="section">
@@ -385,12 +410,13 @@ VIEWS.home = {
         { key: "date", label: "日付", type: "date", default: date },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
+        { key: "pri", label: "優先度（任意）", type: "select", options: ["", ...PRIS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea", placeholder: "例: ヒーロー部分まで完成。残りは明日。" },
       ], { ...t, date });
       if (!v || !v.title) return;
       const newDate = v.date || date;
-      const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo };
+      const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, pri: v.pri, tags: v.tags, memo: v.memo };
       try {
         if (newDate !== date) {
           await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date, moveTo: newDate }) });
@@ -490,13 +516,14 @@ VIEWS.home = {
         { key: "date", label: "日付", type: "date", default: viewDate },
         { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
         { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
+        { key: "pri", label: "優先度（任意）", type: "select", options: ["", ...PRIS] },
         { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags", placeholder: "例: LP, 急ぎ" },
         { key: "memo", label: "メモ（任意）", type: "textarea", placeholder: "例: ◯◯様向け" },
       ]);
       if (!v || !v.title) return;
       const date = v.date || viewDate;
       try {
-        const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo }) });
+        const day = await api("/api/tasks", { method: "POST", body: JSON.stringify({ title: v.title, date, time: v.time, endTime: v.endTime, cat: v.cat, pri: v.pri, tags: v.tags, memo: v.memo }) });
         if (date === todayStr()) DB.day = day; else SCHED_CACHE[date] = day;
       } catch (err) { toast(err.message, "x"); return; }
       // 追加先が今表示中の日ならカードを更新、そうでなければ知らせるだけ
@@ -506,8 +533,32 @@ VIEWS.home = {
 
     $("#logActivity").addEventListener("click", logActivity);
     $$("[data-go]", main).forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
+    $$("[data-remdone]").forEach((cb) => cb.addEventListener("change", async () => {
+      const r = DB.reminders.items.find((x) => x.id === cb.dataset.remdone);
+      if (!r) return;
+      r.done = true;
+      await saveDb("reminders"); rerender();
+    }));
   },
 };
+
+// 学習ログのフォーム項目（分/科目に加え、メモ・タグ・参考リンクを残せる）
+function studyFields(subjects, forDate, currentSubject) {
+  const options = currentSubject && !subjects.includes(currentSubject) ? [currentSubject, ...subjects] : subjects;
+  return [
+    { key: "date", label: "日付", type: "date", default: forDate || todayStr() },
+    { key: "min", label: "分", type: "number", placeholder: "60" },
+    { key: "subject", label: "科目", type: "select", options },
+    { key: "tags", label: "タグ（任意・カンマ区切り）", type: "tags" },
+    { key: "link", label: "参考リンク（任意）", type: "url", placeholder: "https://…" },
+    { key: "memo", label: "メモ（やった内容・詰まった点・次回やることなど）", type: "textarea" },
+  ];
+}
+async function addStudyLog(v) {
+  DB.study.logs.push({ id: uid(), date: v.date || todayStr(), min: v.min, subject: v.subject, tags: v.tags || [], link: v.link || "", memo: v.memo || "", src: "manual" });
+  await saveDb("study");
+  await addXP(Math.min(v.min, 120), "勉強を記録");
+}
 
 // 「やったことを記録」: 種類を選ぶと、対応する管理ページ（勉強/売上/営業/作品）に自動で記録される
 async function logActivity() {
@@ -531,14 +582,9 @@ async function logActivity() {
   if (!pick) return;
 
   if (pick === "study") {
-    const v = await modal("勉強を記録", [
-      { key: "min", label: "分", type: "number", placeholder: "60" },
-      { key: "subject", label: "科目", type: "select", options: ["一般", ...DB.learning.items.map((i) => i.name), "その他"] },
-      { key: "date", label: "日付", type: "date", default: todayStr() },
-    ]);
+    const v = await modal("勉強を記録", studyFields(["一般", ...DB.learning.items.map((i) => i.name), "その他"]));
     if (!v || !v.min) return;
-    DB.study.logs.push({ id: uid(), date: v.date || todayStr(), min: v.min, subject: v.subject, src: "manual" });
-    await saveDb("study"); await addXP(Math.min(v.min, 120), "勉強を記録"); toast("勉強を記録しました");
+    await addStudyLog(v); toast("勉強を記録しました");
   } else if (pick === "sale") {
     const v = await modal("売上を記録", [
       { key: "amount", label: "売上金額（円）", type: "money", placeholder: "50000" },
@@ -837,6 +883,24 @@ VIEWS.time = {
             .map(([label, value]) => ({ label, value })), fmtMin)}
         </div>
       </div>
+      </div>
+
+      <div class="section-list">
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <p class="section-title">${icon("book", 15)} 最近の学習ログ</p>
+          ${[...logs].sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id))).slice(0, 15).map((l) => `
+            <div class="list-item" data-log="${l.id}" role="button" tabindex="0" style="cursor:pointer">
+              <span class="li-time">${esc(fmtShort(l.date))}</span>
+              <div class="li-body">
+                <div class="li-title">${esc(l.subject)} <span class="pill">${fmtMin(l.min)}</span></div>
+                ${l.tags?.length ? `<div class="small muted">${l.tags.map((t) => "#" + esc(t)).join(" ")}</div>` : ""}
+                ${l.memo ? `<div class="li-memo">${esc(l.memo)}</div>` : ""}
+              </div>
+              ${l.link ? `<a class="icon-btn" href="${esc(l.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${icon("external", 14)}</a>` : ""}
+            </div>`).join("") || '<p class="empty">まだ記録がありません</p>'}
+        </div>
+      </div>
       </div>`;
 
     $$("#pomoDur button").forEach((b) => b.addEventListener("click", () => {
@@ -853,17 +917,25 @@ VIEWS.time = {
     $("#pomoReset").addEventListener("click", () => { POMO.run = false; clearInterval(POMO.id); POMO.left = POMO.dur; POMO.taskId = null; POMO.taskTitle = ""; POMO.taskDate = null; rerender(); });
 
     $("#manualAdd").addEventListener("click", async () => {
-      const v = await modal("勉強時間を記録", [
-        { key: "date", label: "日付", type: "date", default: todayStr() },
-        { key: "min", label: "分", type: "number", placeholder: "60" },
-        { key: "subject", label: "科目", type: "select", options: subjects },
-      ]);
+      const v = await modal("勉強時間を記録", studyFields(subjects));
       if (!v || !v.min) return;
-      DB.study.logs.push({ id: uid(), date: v.date || todayStr(), min: v.min, subject: v.subject, src: "manual" });
-      await saveDb("study");
-      await addXP(Math.min(v.min, 120), "勉強を記録");
+      await addStudyLog(v);
       rerender();
     });
+
+    $$("[data-log]").forEach((el) => el.addEventListener("click", async () => {
+      const l = DB.study.logs.find((x) => x.id === el.dataset.log);
+      if (!l) return;
+      const v = await modal("学習ログを編集", studyFields(subjects, l.date, l.subject), l, { onDelete: "この学習ログを削除しますか？" });
+      if (!v) return;
+      if (v.__delete) {
+        DB.study.logs = DB.study.logs.filter((x) => x.id !== l.id);
+      } else {
+        Object.assign(l, { date: v.date || l.date, min: v.min || l.min, subject: v.subject, tags: v.tags || [], link: v.link || "", memo: v.memo || "" });
+      }
+      await saveDb("study");
+      rerender();
+    }));
   },
 };
 
@@ -1005,6 +1077,113 @@ VIEWS.habits = {
   },
 };
 
+// ===== リマインダー =====
+// 定番タスクとは別に、一回きりの「いつ何をリマインドされたいか」を持てる軽量な通知機能。
+// アプリを開いている間、期限が来たものをトースト＋（許可していれば）ブラウザ通知で知らせる。
+// アプリを閉じている間の配信（真のプッシュ通知）は別途Service Worker/VAPIDが必要なため対象外。
+
+const REMINDER_FIELDS = [
+  { key: "title", label: "内容", type: "text", placeholder: "例: ○○さんに電話する" },
+  { key: "date", label: "日付", type: "date", default: todayStr() },
+  { key: "time", label: "時刻（任意）", type: "time" },
+  { key: "memo", label: "メモ（任意）", type: "textarea" },
+];
+// 期限が来ていて未完了のリマインダー（日付昇順）
+function dueReminders() {
+  if (!DB.reminders) return [];
+  const d = todayStr(), hm = new Date().toTimeString().slice(0, 5);
+  return DB.reminders.items
+    .filter((r) => !r.done && (r.date < d || (r.date === d && (!r.time || r.time <= hm))))
+    .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+}
+const REMINDER_NOTIFIED = new Set(); // このセッション中に一度通知済みのID（再読込のたびリセット）
+function checkReminders() {
+  const due = dueReminders();
+  let fresh = false;
+  for (const r of due) {
+    if (REMINDER_NOTIFIED.has(r.id)) continue;
+    REMINDER_NOTIFIED.add(r.id);
+    fresh = true;
+    toast("⏰ " + r.title, "bell");
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try { new Notification("LifeOS リマインダー", { body: r.title + (r.memo ? "\n" + r.memo : ""), tag: "lifeos-rem-" + r.id }); } catch (e) {}
+    }
+  }
+  // ホーム/リマインダー画面が開いていれば、モーダル操作中でなければバナーに反映
+  if (fresh && (CURRENT === "home" || CURRENT === "reminders") && !$("#modalWrap .overlay")) rerender();
+}
+
+VIEWS.reminders = {
+  title: "リマインダー", icon: "bell",
+  render(main) {
+    const items = [...DB.reminders.items].sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+    const open = items.filter((r) => !r.done);
+    const done = items.filter((r) => r.done);
+    const hasNotifApi = typeof Notification !== "undefined";
+    const remRow = (r) => {
+      const overdue = !r.done && (r.date < todayStr() || (r.date === todayStr() && r.time && r.time <= new Date().toTimeString().slice(0, 5)));
+      return `<div class="list-item" data-rem="${r.id}" role="button" tabindex="0" style="cursor:pointer">
+        <input type="checkbox" class="checkbox" data-remchk="${r.id}" ${r.done ? "checked" : ""}>
+        <div class="li-body">
+          <div class="li-title" style="${r.done ? "text-decoration:line-through;opacity:.6" : ""}">${esc(r.title)}</div>
+          ${r.memo ? `<div class="li-memo">${esc(r.memo)}</div>` : ""}
+        </div>
+        <span class="pill ${overdue ? "red" : ""}">${fmtShort(r.date)}${r.time ? " " + esc(r.time) : ""}</span>
+      </div>`;
+    };
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div><p class="eyebrow">Reminders</p><h1>リマインダー</h1></div>
+        <button class="btn" id="add">${icon("plus", 15)} 追加</button>
+      </div>
+      ${hasNotifApi && Notification.permission !== "granted" ? `
+      <div class="section-list"><div class="section">
+        <div style="padding:14px 2px;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap">
+          <p class="small muted" style="margin:0;flex:1;min-width:200px">アプリを開いている間、期限が来たリマインダーをブラウザ通知でも知らせます。</p>
+          <button class="btn ghost sm" id="notifEnable" style="white-space:nowrap">${icon("bell", 14)} 通知を有効化</button>
+        </div>
+      </div></div>` : ""}
+      <div class="section-list">
+      <div class="section">
+        <p class="section-title" style="margin-top:16px">${icon("bell", 15)} 未対応（${open.length}）</p>
+        <div style="padding-bottom:16px">${open.length ? open.map(remRow).join("") : '<p class="empty">リマインダーはありません。</p>'}</div>
+      </div>
+      ${done.length ? `<div class="section">
+        <p class="section-title" style="margin-top:16px">${icon("checkline", 15)} 完了済み</p>
+        <div style="padding-bottom:16px">${done.slice(-10).reverse().map(remRow).join("")}</div>
+      </div>` : ""}
+      </div>`;
+
+    $("#add").addEventListener("click", async () => {
+      const v = await modal("リマインダーを追加", REMINDER_FIELDS, { date: todayStr() });
+      if (!v || !v.title) return;
+      DB.reminders.items.push({ id: uid(), ...v, done: false });
+      await saveDb("reminders"); rerender();
+    });
+    $("#notifEnable")?.addEventListener("click", async () => {
+      const perm = await Notification.requestPermission();
+      toast(perm === "granted" ? "通知を有効にしました" : "通知が許可されませんでした", perm === "granted" ? "checkline" : "x");
+      rerender();
+    });
+    $$("[data-remchk]").forEach((cb) => cb.addEventListener("click", (e) => e.stopPropagation()));
+    $$("[data-remchk]").forEach((cb) => cb.addEventListener("change", async () => {
+      const r = DB.reminders.items.find((x) => x.id === cb.dataset.remchk);
+      r.done = cb.checked;
+      await saveDb("reminders"); rerender();
+    }));
+    $$("[data-rem]").forEach((el) => el.addEventListener("click", async () => {
+      const r = DB.reminders.items.find((x) => x.id === el.dataset.rem);
+      if (!r) return;
+      const v = await modal("リマインダーを編集", REMINDER_FIELDS, r, { onDelete: "このリマインダーを削除しますか？" });
+      if (!v) return;
+      if (v.__delete) DB.reminders.items = DB.reminders.items.filter((x) => x.id !== r.id);
+      else Object.assign(r, v);
+      await saveDb("reminders"); rerender();
+    }));
+  },
+};
+
 // ===== メニュー（モバイル: その他） =====
 
 VIEWS.menu = {
@@ -1034,4 +1213,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   initPullToRefresh();
   window.addEventListener("hashchange", route);
   route();
+  checkReminders();
+  setInterval(checkReminders, 30000); // アプリを開いている間、30秒おきに期限切れリマインダーを確認
 });

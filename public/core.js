@@ -69,6 +69,9 @@ const DOC_DEFAULTS = {
   portfolio: { items: [] },
   projects: { items: [] },
   outreach: { logs: [] },       // {id,date,channel,sent,replies,orders}
+  leads: { items: [] },         // 見込み案件（営業パイプライン）{id,name,status,amount,nextAction,memo,updatedAt}
+  clients: { items: [] },       // 顧客マスタ {id,name,contact,memo,createdAt}
+  reminders: { items: [] },     // リマインダー（定番タスク以外の一回きりの通知）{id,title,date,time,memo,done}
   sales: { logs: [] },          // {id,date,amount,source,memo}
   goals: { y1: [], y3: [], y5: [], y10: [] },
   badges: { unlocked: {} },

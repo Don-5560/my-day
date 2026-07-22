@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import * as store from "../lib/store.js";
 
 // フロント(core.js)と同じXPルール。MCP経由の行動にもXPを付けて整合させる。
-const XP = { task: 10, todoHigh: 20, todoMid: 10, todoLow: 5, diary: 15 };
+const XP = { task: 10, todoHigh: 20, todoMid: 10, todoLow: 5, diary: 15, project: 200, projectPaid: 300 };
 
 async function awardXp(amt, why) {
   const xp = (await store.getDoc("xp")) ?? { events: [] };
@@ -23,6 +23,7 @@ function levelOf(events) {
 
 const CATS = ["勉強", "制作", "営業", "生活", "趣味"];
 const PRIS = ["高", "中", "低"];
+const LEAD_STATUS = ["見込み", "商談中", "受注", "失注"];
 
 export const TOOLS = [
   {
@@ -49,6 +50,7 @@ export const TOOLS = [
         time: { type: "string", description: "開始時刻 HH:MM（任意）" },
         endTime: { type: "string", description: "終了時刻 HH:MM（任意）" },
         cat: { type: "string", enum: CATS, description: "カテゴリー（任意）" },
+        pri: { type: "string", enum: PRIS, description: "優先度（任意・高/中/低）" },
         memo: { type: "string", description: "メモ・やった内容（任意）" },
         date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
       },
@@ -63,7 +65,7 @@ export const TOOLS = [
       properties: {
         tasks: {
           type: "array",
-          description: "時刻順の予定。各要素 {title, time?(HH:MM), endTime?(HH:MM), cat?, tags?}",
+          description: "時刻順の予定。各要素 {title, time?(HH:MM), endTime?(HH:MM), cat?, tags?, pri?}",
           items: {
             type: "object",
             properties: {
@@ -71,6 +73,7 @@ export const TOOLS = [
               time: { type: "string", description: "開始 HH:MM" },
               endTime: { type: "string", description: "終了 HH:MM" },
               cat: { type: "string", enum: CATS },
+              pri: { type: "string", enum: PRIS, description: "優先度（任意・高/中/低）" },
               tags: { type: "array", items: { type: "string" } },
               memo: { type: "string" },
             },
@@ -151,13 +154,16 @@ export const TOOLS = [
   },
   {
     name: "log_study",
-    description: "勉強時間を記録する（分単位）。学習グラフとXPに反映される。",
+    description: "勉強時間を記録する（分単位）。メモ・タグ・参考リンクも残せる。学習グラフとXPに反映される。",
     inputSchema: {
       type: "object",
       properties: {
         min: { type: "number", description: "勉強した分数" },
         subject: { type: "string", description: "科目（例: React, JavaScript, 一般）" },
         date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
+        memo: { type: "string", description: "やった内容・詰まった点・次回やることなどの自由メモ" },
+        tags: { type: "array", items: { type: "string" }, description: "タグ（例: [\"React\",\"案件系\"]）" },
+        link: { type: "string", description: "参考リンク（YouTube・記事URLなど）" },
       },
       required: ["min"],
     },
@@ -175,6 +181,151 @@ export const TOOLS = [
         date: { type: "string" },
       },
       required: ["amount"],
+    },
+  },
+  {
+    name: "add_project",
+    description: "案件（案件管理ページ）を1件登録する。進行中の案件がget_overviewのactiveProjectsに出るようになる。登録するとXPが入る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "案件名" },
+        client: { type: "string", description: "クライアント名（任意）" },
+        amount: { type: "number", description: "金額（円・任意）" },
+        contract: { type: "string", description: "契約日 YYYY-MM-DD（任意）" },
+        deadline: { type: "string", description: "納期 YYYY-MM-DD（任意）" },
+        progress: { type: "number", description: "進捗率 0-100。省略で0" },
+        memo: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "list_projects",
+    description: "案件一覧を取得する（完了済みも含む）。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_project",
+    description: "案件を更新する。idはlist_projectsで確認。進捗・請求状況・入金状況・納期・メモを更新できる。入金済みに変えるとXPが入る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        progress: { type: "number", description: "進捗率 0-100" },
+        invoice: { type: "string", enum: ["未請求", "請求済み"] },
+        paid: { type: "string", enum: ["未入金", "入金済み"] },
+        deadline: { type: "string", description: "YYYY-MM-DD" },
+        memo: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "add_lead",
+    description: "見込み案件（営業パイプライン）を1件登録する。まだ確定していない商談・見込みを追跡する。確定売上はlog_sale、進行中の受注済み案件はadd_projectを使う。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "相手・案件名（例: ○○サロン）" },
+        status: { type: "string", enum: LEAD_STATUS, description: "省略で 見込み" },
+        amount: { type: "number", description: "想定金額（円・任意）" },
+        nextAction: { type: "string", description: "次にやること（任意）" },
+        memo: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "list_leads",
+    description: "見込み案件（営業パイプライン）の一覧を取得する。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_lead",
+    description: "見込み案件のステータス・次アクション・金額・メモを更新する。idはlist_leadsで確認。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        status: { type: "string", enum: LEAD_STATUS },
+        amount: { type: "number" },
+        nextAction: { type: "string" },
+        memo: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "add_client",
+    description: "顧客（クライアント）の基本情報を登録する。連絡先・メモを残しておける。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "顧客名" },
+        contact: { type: "string", description: "連絡先（電話・メール・SNSなど・任意）" },
+        memo: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "list_clients",
+    description: "顧客一覧を取得する。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_client",
+    description: "顧客情報を更新する。idはlist_clientsで確認。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        name: { type: "string" },
+        contact: { type: "string" },
+        memo: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "add_reminder",
+    description: "一回きりのリマインダーを登録する（定番タスクとは別枠）。指定した日付・時刻を過ぎるとget_overviewのdueRemindersに出るようになり、アプリを開いていればブラウザ通知でも知らせる。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "内容（例: ○○さんに電話する）" },
+        date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
+        time: { type: "string", description: "HH:MM（任意・省略でその日の始まりから対象）" },
+        memo: { type: "string" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "list_reminders",
+    description: "リマインダー一覧を取得する（完了済みも含む）。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "complete_reminder",
+    description: "リマインダーを完了にする。idはlist_remindersで確認。",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "mark_budget_item_done",
+    description: "予想収支の項目を「実現済み」にする（または解除する）。実際の取引として記録された予定を実現済みにすると、予想残高の二重計上を防げる。idはget_budget_planで確認。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "予想収支の項目ID" },
+        done: { type: "boolean", description: "省略で現在の状態を反転" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -263,10 +414,10 @@ export async function callTool(name, args = {}) {
   switch (name) {
     case "get_overview": {
       const today = store.today();
-      const [day, todosDoc, studyDoc, salesDoc, projDoc, xpDoc, settings, fin] = await Promise.all([
+      const [day, todosDoc, studyDoc, salesDoc, projDoc, leadsDoc, remindersDoc, xpDoc, settings, fin] = await Promise.all([
         store.getDay(today),
         store.getDoc("todos"), store.getDoc("study"), store.getDoc("sales"),
-        store.getDoc("projects"), store.getDoc("xp"), store.getDoc("settings"),
+        store.getDoc("projects"), store.getDoc("leads"), store.getDoc("reminders"), store.getDoc("xp"), store.getDoc("settings"),
         store.financeSummary(),
       ]);
       const todos = todosDoc?.items ?? [];
@@ -278,7 +429,7 @@ export async function callTool(name, args = {}) {
         level: levelOf(events),
         todayGoal: settings?.todayGoal || "",
         monthGoal: settings?.monthGoal || "",
-        todayTasks: day.tasks.map((t) => ({ id: t.id, title: t.title, done: t.done, time: t.time || "", endTime: t.endTime || "", cat: t.cat || "", spentMin: t.spentMin || 0 })),
+        todayTasks: day.tasks.map((t) => ({ id: t.id, title: t.title, done: t.done, time: t.time || "", endTime: t.endTime || "", cat: t.cat || "", pri: t.pri || "", spentMin: t.spentMin || 0 })),
         weekTodos: todos
           .filter((t) => !t.done && t.due && t.due <= lim)
           .map((t) => ({ id: t.id, title: t.title, cat: t.cat, pri: t.pri, due: t.due })),
@@ -290,6 +441,10 @@ export async function callTool(name, args = {}) {
         expenseThisMonth: fin.expenseThisMonth,
         netThisMonth: fin.netThisMonth,
         activeProjects: (projDoc?.items ?? []).filter((p) => (p.progress || 0) < 100).map((p) => ({ name: p.name, client: p.client, deadline: p.deadline, progress: p.progress })),
+        openLeads: (leadsDoc?.items ?? []).filter((l) => l.status === "見込み" || l.status === "商談中").map((l) => ({ name: l.name, status: l.status, amount: l.amount, nextAction: l.nextAction })),
+        dueReminders: (remindersDoc?.items ?? [])
+          .filter((r) => !r.done && (r.date < today || (r.date === today && (!r.time || r.time <= new Date().toTimeString().slice(0, 5)))))
+          .map((r) => ({ id: r.id, title: r.title, date: r.date, time: r.time, memo: r.memo })),
         diaryWritten: !!day.diary,
       };
     }
@@ -298,8 +453,8 @@ export async function callTool(name, args = {}) {
       return store.getDay(args.date || store.today());
 
     case "add_task": {
-      const { title, time, endTime, cat, memo } = args;
-      const { task, day } = await store.addTask(args.date || store.today(), title, "ai", { time, endTime, cat, memo });
+      const { title, time, endTime, cat, pri, memo } = args;
+      const { task, day } = await store.addTask(args.date || store.today(), title, "ai", { time, endTime, cat, pri, memo });
       return { added: task, tasks: day.tasks };
     }
 
@@ -367,6 +522,9 @@ export async function callTool(name, args = {}) {
         date: args.date || store.today(),
         min: Math.max(1, Math.round(args.min)),
         subject: args.subject || "一般",
+        memo: args.memo || "",
+        tags: Array.isArray(args.tags) ? args.tags.map(String).map((s) => s.trim()).filter(Boolean) : [],
+        link: args.link || "",
         src: "ai",
       };
       doc.logs.push(log);
@@ -385,6 +543,139 @@ export async function callTool(name, args = {}) {
       });
       const xp = await awardXp(Math.min(Math.round(amount / 1000), 300), "売上を記録");
       return { logged: income, expense, profit: amount - cost, xp };
+    }
+
+    case "add_project": {
+      const doc = (await store.getDoc("projects")) ?? { items: [] };
+      const project = {
+        id: randomUUID(),
+        name: String(args.name).trim(),
+        client: args.client || "",
+        amount: Math.round(Number(args.amount) || 0),
+        contract: args.contract || "",
+        deadline: args.deadline || "",
+        invoice: "未請求",
+        paid: "未入金",
+        progress: Math.max(0, Math.min(100, Math.round(Number(args.progress) || 0))),
+        memo: args.memo || "",
+      };
+      doc.items.push(project);
+      await store.saveDoc("projects", doc);
+      const xp = await awardXp(XP.project, "案件を獲得！");
+      return { project, xp };
+    }
+
+    case "list_projects":
+      return (await store.getDoc("projects")) ?? { items: [] };
+
+    case "update_project": {
+      const doc = (await store.getDoc("projects")) ?? { items: [] };
+      const p = doc.items.find((x) => x.id === args.id);
+      if (!p) throw new Error("案件が見つかりません。list_projectsでidを確認してください");
+      const wasPaid = p.paid;
+      if (args.progress != null) p.progress = Math.max(0, Math.min(100, Math.round(Number(args.progress))));
+      if (args.invoice) p.invoice = args.invoice;
+      if (args.paid) p.paid = args.paid;
+      if (args.deadline != null) p.deadline = args.deadline;
+      if (args.memo != null) p.memo = args.memo;
+      await store.saveDoc("projects", doc);
+      let xp = 0;
+      if (wasPaid !== "入金済み" && p.paid === "入金済み") xp = await awardXp(XP.projectPaid, "入金確認！");
+      return { project: p, xp };
+    }
+
+    case "add_lead": {
+      const doc = (await store.getDoc("leads")) ?? { items: [] };
+      const lead = {
+        id: randomUUID(),
+        name: String(args.name).trim(),
+        status: LEAD_STATUS.includes(args.status) ? args.status : "見込み",
+        amount: Math.round(Number(args.amount) || 0),
+        nextAction: args.nextAction || "",
+        memo: args.memo || "",
+        updatedAt: Date.now(),
+      };
+      doc.items.push(lead);
+      await store.saveDoc("leads", doc);
+      return { lead };
+    }
+
+    case "list_leads":
+      return (await store.getDoc("leads")) ?? { items: [] };
+
+    case "update_lead": {
+      const doc = (await store.getDoc("leads")) ?? { items: [] };
+      const l = doc.items.find((x) => x.id === args.id);
+      if (!l) throw new Error("見込み案件が見つかりません。list_leadsでidを確認してください");
+      if (args.status && LEAD_STATUS.includes(args.status)) l.status = args.status;
+      if (args.amount != null) l.amount = Math.round(Number(args.amount) || 0);
+      if (args.nextAction != null) l.nextAction = args.nextAction;
+      if (args.memo != null) l.memo = args.memo;
+      l.updatedAt = Date.now();
+      await store.saveDoc("leads", doc);
+      return { lead: l };
+    }
+
+    case "add_client": {
+      const doc = (await store.getDoc("clients")) ?? { items: [] };
+      const client = { id: randomUUID(), name: String(args.name).trim(), contact: args.contact || "", memo: args.memo || "", createdAt: Date.now() };
+      doc.items.push(client);
+      await store.saveDoc("clients", doc);
+      return { client };
+    }
+
+    case "list_clients":
+      return (await store.getDoc("clients")) ?? { items: [] };
+
+    case "update_client": {
+      const doc = (await store.getDoc("clients")) ?? { items: [] };
+      const c = doc.items.find((x) => x.id === args.id);
+      if (!c) throw new Error("顧客が見つかりません。list_clientsでidを確認してください");
+      if (args.name != null) c.name = String(args.name).trim();
+      if (args.contact != null) c.contact = args.contact;
+      if (args.memo != null) c.memo = args.memo;
+      await store.saveDoc("clients", doc);
+      return { client: c };
+    }
+
+    case "add_reminder": {
+      const doc = (await store.getDoc("reminders")) ?? { items: [] };
+      const reminder = {
+        id: randomUUID(),
+        title: String(args.title).trim(),
+        date: args.date || store.today(),
+        time: args.time || "",
+        memo: args.memo || "",
+        done: false,
+      };
+      doc.items.push(reminder);
+      await store.saveDoc("reminders", doc);
+      return { reminder };
+    }
+
+    case "list_reminders":
+      return (await store.getDoc("reminders")) ?? { items: [] };
+
+    case "complete_reminder": {
+      const doc = (await store.getDoc("reminders")) ?? { items: [] };
+      const r = doc.items.find((x) => x.id === args.id);
+      if (!r) throw new Error("リマインダーが見つかりません。list_remindersでidを確認してください");
+      r.done = true;
+      await store.saveDoc("reminders", doc);
+      return { reminder: r };
+    }
+
+    case "mark_budget_item_done": {
+      const doc = (await store.getDoc("budgetplan")) ?? { blocks: [] };
+      let found = null;
+      for (const b of doc.blocks || []) {
+        const it = (b.items || []).find((x) => x.id === args.id);
+        if (it) { found = it; break; }
+      }
+      if (!found) throw new Error("項目が見つかりません。get_budget_planでidを確認してください");
+      found.done = typeof args.done === "boolean" ? args.done : !found.done;
+      await store.saveDoc("budgetplan", doc);
+      return { item: found };
     }
 
     case "set_initial_balance":
@@ -415,7 +706,8 @@ export async function callTool(name, args = {}) {
         if (b.type === "balance") {
           return { id: b.id, type: "balance", title: b.title || "予想残高", runningBalance: running };
         }
-        const total = (b.items ?? []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        // 実現済み(done)の項目はすでに残高(currentBalance)側に反映済みのため、二重計上を避けて合計・累計から除外する
+        const total = (b.items ?? []).filter((i) => !i.done).reduce((s, i) => s + (Number(i.amount) || 0), 0);
         running += b.type === "income" ? total : -total;
         return {
           id: b.id,
@@ -424,7 +716,7 @@ export async function callTool(name, args = {}) {
           total,
           runningBalance: running,
           items: (b.items ?? []).map((i) => ({
-            id: i.id, label: i.label, amount: i.amount, from: i.from || "", to: i.to || "",
+            id: i.id, label: i.label, amount: i.amount, from: i.from || "", to: i.to || "", done: i.done === true,
             breakdown: (i.breakdown ?? []).map((bd) => ({ name: bd.name, amount: bd.amount, note: bd.note || "" })),
           })),
         };

@@ -209,14 +209,14 @@ app.get("/api/day", wrap(async (req, res) => {
 
 // タスク追加
 app.post("/api/tasks", wrap(async (req, res) => {
-  const { date = store.today(), title, source, time, endTime, cat, tags, memo } = req.body;
-  const { day } = await store.addTask(date, title, source, { time, endTime, cat, tags, memo });
+  const { date = store.today(), title, source, time, endTime, cat, tags, memo, pri } = req.body;
+  const { day } = await store.addTask(date, title, source, { time, endTime, cat, tags, memo, pri });
   res.json(day);
 }));
 
-// タスクの更新: 完了トグル(done) / 項目編集(title,cat,tags,time,endTime,spentMin) / 所要時間加算(addMin)
+// タスクの更新: 完了トグル(done) / 項目編集(title,cat,tags,time,endTime,spentMin,pri) / 所要時間加算(addMin)
 app.patch("/api/tasks/:id", wrap(async (req, res) => {
-  const { date = store.today(), done, title, cat, tags, time, endTime, memo, addMin, spentMin, moveTo, important } = req.body;
+  const { date = store.today(), done, title, cat, tags, time, endTime, memo, pri, addMin, spentMin, moveTo, important } = req.body;
   const { id } = req.params;
   let day;
   if (typeof addMin === "number") day = (await store.addTaskTime(date, id, addMin)).day;
@@ -226,9 +226,9 @@ app.patch("/api/tasks/:id", wrap(async (req, res) => {
     if (typeof important === "boolean") day = (await store.updateTask(date, id, { important })).day;
   } else if (moveTo && moveTo !== date) {
     // 項目を反映してから別の日へ移動する
-    await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin, important });
+    await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, pri, spentMin, important });
     day = (await store.moveTask(date, id, moveTo)).day;
-  } else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, spentMin, important })).day;
+  } else day = (await store.updateTask(date, id, { title, cat, tags, time, endTime, memo, pri, spentMin, important })).day;
   res.json(day);
 }));
 

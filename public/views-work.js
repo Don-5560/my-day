@@ -146,8 +146,9 @@ VIEWS.projects = {
     const items = DB.projects.items;
     const totalAmt = items.reduce((s, p) => s + (p.amount || 0), 0);
     const unpaid = items.filter((p) => p.paid !== "入金済み").reduce((s, p) => s + (p.amount || 0), 0);
+    const clientNames = DB.clients.items.map((c) => c.name);
     const FIELDS = [
-      { key: "client", label: "クライアント", type: "text" },
+      { key: "client", label: "クライアント", type: "text", placeholder: clientNames[0] || "例: ○○サロン" },
       { key: "name", label: "案件名", type: "text" },
       { key: "amount", label: "金額（円）", type: "money", placeholder: "100000" },
       { key: "contract", label: "契約日", type: "date" },
@@ -157,6 +158,16 @@ VIEWS.projects = {
       { key: "progress", label: "進捗率", type: "range" },
       { key: "memo", label: "メモ", type: "textarea" },
     ];
+    const clientFields = [
+      { key: "name", label: "クライアント名", type: "text", placeholder: "例: ○○サロン" },
+      { key: "contact", label: "連絡先（電話・メール・SNSなど）", type: "text" },
+      { key: "memo", label: "メモ（任意）", type: "textarea" },
+    ];
+    const statsByClient = (name) => {
+      const ps = items.filter((p) => p.client === name);
+      return { count: ps.length, amount: ps.reduce((s, p) => s + (p.amount || 0), 0) };
+    };
+
     main.innerHTML = `
       <div class="page-head">
         <div><p class="eyebrow">Projects</p><h1>案件管理</h1></div>
@@ -193,6 +204,26 @@ VIEWS.projects = {
         </div>
         </div>`;
       }).join("") || '<p class="empty">案件はまだありません。最初の1件を獲りにいこう。</p>'}
+      </div>
+
+      <div class="section-list">
+      <div class="section">
+        <div class="card-head" style="padding-top:16px">
+          <p class="section-title" style="margin-bottom:0">${icon("users", 15)} 顧客</p>
+          <button class="btn ghost sm" id="addClient">${icon("plus", 13)} 追加</button>
+        </div>
+        <div style="padding-bottom:16px">
+          ${DB.clients.items.length ? DB.clients.items.map((c) => {
+            const st = statsByClient(c.name);
+            return `<div class="list-item" data-client="${c.id}" role="button" tabindex="0" style="cursor:pointer">
+              <div class="li-body">
+                <div class="li-title">${esc(c.name)}${st.count ? ` <span class="small muted">案件${st.count}件・${fmtYen(st.amount)}</span>` : ""}</div>
+                ${c.contact ? `<div class="li-memo">${esc(c.contact)}</div>` : ""}
+              </div>
+            </div>`;
+          }).join("") : '<p class="empty">顧客はまだ登録されていません。</p>'}
+        </div>
+      </div>
       </div>`;
 
     $("#add").addEventListener("click", async () => {
@@ -217,12 +248,30 @@ VIEWS.projects = {
       DB.projects.items = DB.projects.items.filter((x) => x.id !== b.dataset.del);
       await saveDb("projects"); rerender();
     }));
+
+    $("#addClient").addEventListener("click", async () => {
+      const v = await modal("顧客を追加", clientFields);
+      if (!v || !v.name) return;
+      DB.clients.items.push({ id: uid(), ...v, createdAt: Date.now() });
+      await saveDb("clients"); rerender();
+    });
+    $$("[data-client]").forEach((el) => el.addEventListener("click", async () => {
+      const c = DB.clients.items.find((x) => x.id === el.dataset.client);
+      if (!c) return;
+      const v = await modal("顧客を編集", clientFields, c, { onDelete: "この顧客を削除しますか？（紐づく案件は残ります）" });
+      if (!v) return;
+      if (v.__delete) DB.clients.items = DB.clients.items.filter((x) => x.id !== c.id);
+      else Object.assign(c, v);
+      await saveDb("clients"); rerender();
+    }));
   },
 };
 
 // ===== 営業管理 =====
 
 const CHANNELS = ["Instagram", "X", "TikTok", "メール", "DM"];
+const LEAD_STATUS = ["見込み", "商談中", "受注", "失注"];
+const LEAD_STATUS_CLASS = { "見込み": "amb", "商談中": "acc", "受注": "grn", "失注": "" };
 
 VIEWS.outreach = {
   title: "営業", icon: "send",
@@ -236,6 +285,17 @@ VIEWS.outreach = {
       return { label: ch, value: sent };
     });
 
+    const leads = DB.leads.items;
+    const openLeads = leads.filter((l) => l.status === "見込み" || l.status === "商談中");
+    const pipelineAmt = openLeads.reduce((s, l) => s + (l.amount || 0), 0);
+    const leadFields = [
+      { key: "name", label: "相手・案件名", type: "text", placeholder: "例: ○○サロン" },
+      { key: "status", label: "ステータス", type: "select", options: LEAD_STATUS },
+      { key: "amount", label: "想定金額（円・任意）", type: "money", placeholder: "100000" },
+      { key: "nextAction", label: "次のアクション（任意）", type: "text", placeholder: "例: モックアップ提出" },
+      { key: "memo", label: "メモ（任意）", type: "textarea" },
+    ];
+
     main.innerHTML = `
       <div class="page-head">
         <div><p class="eyebrow">Outreach</p><h1>営業管理</h1></div>
@@ -246,6 +306,27 @@ VIEWS.outreach = {
         ${statCard("chart", rate(sum("replies"), sum("sent")), "返信率")}
         ${statCard("trophy", rate(sum("orders"), sum("sent")), "受注率")}
       </div>
+
+      <div class="section-list">
+      <div class="section">
+        <div class="card-head" style="padding-top:16px">
+          <p class="section-title" style="margin-bottom:0">${icon("briefcase", 15)} 見込み案件（パイプライン）</p>
+          <button class="btn ghost sm" id="addLead">${icon("plus", 13)} 追加</button>
+        </div>
+        <p class="small muted" style="margin:4px 0 12px">進行中の見込み金額：<strong>${fmtYen(pipelineAmt)}</strong>（${openLeads.length}件）</p>
+        <div style="padding-bottom:16px">
+          ${leads.length ? leads.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map((l) => `
+            <div class="list-item" data-lead="${l.id}" role="button" tabindex="0" style="cursor:pointer">
+              <span class="pill ${LEAD_STATUS_CLASS[l.status] || ""}">${esc(l.status || "見込み")}</span>
+              <div class="li-body">
+                <div class="li-title">${esc(l.name)}${l.amount ? ` <span class="small muted">${fmtYen(l.amount)}</span>` : ""}</div>
+                ${l.nextAction ? `<div class="li-memo">${icon("chevR", 10)} ${esc(l.nextAction)}</div>` : ""}
+              </div>
+            </div>`).join("") : '<p class="empty">見込み案件はまだありません。営業から次の受注につなげよう。</p>'}
+        </div>
+      </div>
+      </div>
+
       <div class="section-list"><div class="grid2">
         <div><p class="section-title">${icon("chart", 15)} チャネル別 送信数</p>${hbars(byCh)}</div>
         <div>
@@ -276,6 +357,22 @@ VIEWS.outreach = {
     $$("[data-del]").forEach((b) => b.addEventListener("click", async () => {
       DB.outreach.logs = DB.outreach.logs.filter((x) => x.id !== b.dataset.del);
       await saveDb("outreach"); rerender();
+    }));
+
+    $("#addLead").addEventListener("click", async () => {
+      const v = await modal("見込み案件を追加", leadFields, { status: "見込み" });
+      if (!v || !v.name) return;
+      DB.leads.items.push({ id: uid(), ...v, updatedAt: Date.now() });
+      await saveDb("leads"); rerender();
+    });
+    $$("[data-lead]").forEach((el) => el.addEventListener("click", async () => {
+      const l = DB.leads.items.find((x) => x.id === el.dataset.lead);
+      if (!l) return;
+      const v = await modal("見込み案件を編集", leadFields, l, { onDelete: "この見込み案件を削除しますか？" });
+      if (!v) return;
+      if (v.__delete) DB.leads.items = DB.leads.items.filter((x) => x.id !== l.id);
+      else Object.assign(l, v, { updatedAt: Date.now() });
+      await saveDb("leads"); rerender();
     }));
   },
 };
@@ -477,13 +574,14 @@ const planBdRowHTML = (bd) => `<div class="plan-bd-row">
   </div>`;
 const planItemsHTML = (items, blockId, type) => (items.length ? items.map((it) => {
   const period = planPeriodLabel(it);
-  return `<div class="plan-item" data-plan-open="${it.id}" data-block="${blockId}" role="button" tabindex="0">
+  return `<div class="plan-item" data-plan-open="${it.id}" data-block="${blockId}" role="button" tabindex="0" style="${it.done ? "opacity:.55" : ""}">
     <div class="plan-item-head">
-      <span class="row-title">${esc(it.label)}</span>
-      <strong style="color:${type === "income" ? "var(--green)" : "var(--red)"}">${type === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
+      <span class="row-title">${it.done ? `<span style="color:var(--green)">${icon("checkline", 12)}</span> ` : ""}${esc(it.label)}</span>
+      <strong style="color:${type === "income" ? "var(--green)" : "var(--red)"};${it.done ? "text-decoration:line-through" : ""}">${type === "income" ? "+" : "-"}${fmtYen(it.amount)}</strong>
     </div>
     ${(it.breakdown && it.breakdown.length) ? `<div class="plan-bd-list">${it.breakdown.map(planBdRowHTML).join("")}</div>` : ""}
     ${period ? `<div class="plan-detail-line" style="margin-top:6px"><span>期間</span><span>${esc(period)}</span></div>` : ""}
+    ${it.done ? `<div class="plan-detail-line" style="margin-top:4px"><span>状態</span><span style="color:var(--green)">実現済み（合計から除外）</span></div>` : ""}
   </div>`;
 }).join("") : '<p class="empty">まだ項目がありません</p>');
 // ブロック（収入/支出/残高チェックポイント）の名前を追加・編集・削除するモーダル
@@ -503,7 +601,7 @@ const PLAN_BD_FIELDS = () => [
 // 予想収支の項目を追加・編集するモーダル。内訳の追加/編集/削除もこの中だけで完結させる
 async function planItemModal(kind, initial) {
   const isEdit = !!initial.id;
-  const draft = { label: initial.label || "", amount: initial.amount ?? "", from: initial.from || "", to: initial.to || "", breakdown: [...(initial.breakdown || [])] };
+  const draft = { label: initial.label || "", amount: initial.amount ?? "", from: initial.from || "", to: initial.to || "", breakdown: [...(initial.breakdown || [])], done: initial.done === true };
   for (;;) {
     const wrap = $("#modalWrap");
     wrap.innerHTML = `<div class="overlay"><div class="modal">
@@ -524,6 +622,9 @@ async function planItemModal(kind, initial) {
           <span class="bd-name">${esc(bd.name)}</span><span class="bd-note">${esc(bd.note || "")}</span><span class="bd-amount">${fmtYen(bd.amount)}</span>
         </div>`).join("") || '<p class="empty small">まだ内訳はありません</p>'}</div>
         <button type="button" class="btn ghost sm" id="pbdAdd" style="margin-top:8px">${icon("plus", 13)} 内訳を追加</button>
+        ${isEdit ? `<button type="button" class="btn ghost sm" id="pDoneToggle" style="width:100%;margin-top:12px;${draft.done ? "color:var(--green);border-color:var(--green)" : ""}">
+          ${icon("checkline", 14)} ${draft.done ? "実現済み（タップで解除）" : "実現済みにする（実際の取引に記録済み・合計から除外）"}
+        </button>` : ""}
         <div class="modal-foot">
           ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
           <button type="button" class="btn ghost" data-x>キャンセル</button>
@@ -546,6 +647,7 @@ async function planItemModal(kind, initial) {
       });
       wrap.querySelector("#pbdAdd").addEventListener("click", () => { captureDraft(); resolve({ __addBd: true }); });
       $$("[data-bd-i]", wrap).forEach((el) => el.addEventListener("click", () => { captureDraft(); resolve({ __editBd: Number(el.dataset.bdI) }); }));
+      wrap.querySelector("#pDoneToggle")?.addEventListener("click", () => { captureDraft(); resolve({ __toggleDone: true }); });
       wrap.querySelector("#pform").addEventListener("submit", (e) => {
         e.preventDefault();
         const fd = new FormData(e.target);
@@ -569,9 +671,10 @@ async function planItemModal(kind, initial) {
       }
       continue;
     }
+    if (result.__toggleDone) { draft.done = !draft.done; continue; }
     if (!result.label || !result.amount) { toast("項目名と金額を入力してください", "x"); draft.label = result.label; draft.amount = result.amount; draft.from = result.from; draft.to = result.to; continue; }
     wrap.innerHTML = "";
-    return { label: result.label, amount: Math.round(result.amount), from: result.from, to: result.to, breakdown: draft.breakdown };
+    return { label: result.label, amount: Math.round(result.amount), from: result.from, to: result.to, breakdown: draft.breakdown, done: draft.done };
   }
 }
 
@@ -1128,10 +1231,9 @@ VIEWS.money = {
       for (const t of list) m[t.category] = (m[t.category] || 0) + t.amount;
       return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
     };
-    // 内訳は確定分（未収の収入/引き落とし待ちの支出を除く）だけを集計する。残高・収支サマリーと基準を揃える
-    const confirmedTxs = txs.filter((t) => t.payoutStatus !== "pending");
-    const incomeRows = groupByCat(confirmedTxs.filter((t) => t.type === "income"));
-    const expenseRows = groupByCat(confirmedTxs.filter((t) => t.type === "expense"));
+    // 内訳もpending分を含めて集計する（残高・収支サマリーと基準を揃える）
+    const incomeRows = groupByCat(txs.filter((t) => t.type === "income"));
+    const expenseRows = groupByCat(txs.filter((t) => t.type === "expense"));
 
     // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
     let running = fin.currentBalance;
@@ -1142,14 +1244,18 @@ VIEWS.money = {
           <p style="margin:4px 0 0;font-size:26px;font-weight:800;color:${running < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(running)}</p>
         </button>`;
       }
-      const total = b.items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+      // 実現済み（実際の取引として記録済み）の項目は、すでに残高(fin.currentBalance)側に反映されているため、
+      // 二重計上を避けるためここでの合計・以降の予想残高チェックポイントには含めない。
+      const activeItems = b.items.filter((i) => !i.done);
+      const doneCount = b.items.length - activeItems.length;
+      const total = activeItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
       running += b.type === "income" ? total : -total;
       return `<div class="section">
         <p class="section-title" data-block-open="${b.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:16px">${icon("layers", 15)} ${esc(b.title || (b.type === "income" ? "予想収入" : "予想出費"))}</p>
         <div style="padding-bottom:16px">
           ${planItemsHTML(b.items, b.id, b.type)}
           <button class="btn ghost sm" data-item-add="${b.id}" data-kind="${b.type}" style="margin-top:10px">${icon("plus", 13)} 項目を追加</button>
-          <p class="small" style="margin-top:10px;color:var(--muted)">合計：<strong>${fmtYen(total)}</strong></p>
+          <p class="small" style="margin-top:10px;color:var(--muted)">合計（未実現分）：<strong>${fmtYen(total)}</strong>${doneCount ? `　実現済み ${doneCount}件は残高に反映済みのため除外` : ""}</p>
         </div>
       </div>`;
     }).join("");
@@ -1721,10 +1827,11 @@ function calShowDetail(iso) {
       { key: "title", label: "やること", type: "text", placeholder: "何をやった？" },
       { key: "time", label: "時刻（任意）", type: "time" },
       { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
+      { key: "pri", label: "優先度（任意）", type: "select", options: ["", ...PRIS] },
       { key: "tags", label: "タグ（任意）", type: "tags" },
     ]);
     if (!v || !v.title) return;
-    const d = await api("/api/tasks", { method: "POST", body: JSON.stringify({ date: iso, title: v.title, time: v.time, cat: v.cat, tags: v.tags }) });
+    const d = await api("/api/tasks", { method: "POST", body: JSON.stringify({ date: iso, title: v.title, time: v.time, cat: v.cat, pri: v.pri, tags: v.tags }) });
     refresh(d);
   });
   // タップ→詳細。そこから編集（右上）・削除・完了トグル。
@@ -1734,12 +1841,13 @@ function calShowDetail(iso) {
       { key: "date", label: "日付", type: "date", default: iso },
       { type: "timerange", label: "時間（開始 → 終了・任意）", startKey: "time", endKey: "endTime" },
       { key: "cat", label: "カテゴリー（任意）", type: "select", options: ["", ...CATS, ...(DB.categories.task || [])] },
+      { key: "pri", label: "優先度（任意）", type: "select", options: ["", ...PRIS] },
       { key: "tags", label: "タグ（任意）", type: "tags" },
       { key: "memo", label: "メモ（やった内容など・任意）", type: "textarea" },
     ], { ...t, date: iso });
     if (!v || !v.title) return;
     const newDate = v.date || iso;
-    const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, tags: v.tags, memo: v.memo };
+    const body = { title: v.title, time: v.time, endTime: v.endTime, cat: v.cat, pri: v.pri, tags: v.tags, memo: v.memo };
     try {
       if (newDate !== iso) {
         await api("/api/tasks/" + t.id, { method: "PATCH", body: JSON.stringify({ ...body, date: iso, moveTo: newDate }) });
@@ -2127,7 +2235,7 @@ VIEWS.settings = {
           <button class="btn ghost" id="exportJson">${icon("download", 14)} 全データをエクスポート</button>
           <button class="btn ghost" id="copyAI">${icon("copy", 14)} 直近7日をAI用にコピー</button>
         </div>
-        <p class="hint" style="margin-top:10px">エクスポートはバックアップとしても使えます。テーマ/カラー変更・通知は今後追加予定。</p>
+        <p class="hint" style="margin-top:10px">エクスポートはバックアップとしても使えます。通知は「リマインダー」ページから設定できます。テーマ/カラー変更は今後追加予定。</p>
       `)}
       ${sec("account", "アカウント", "logout", `
         <button class="btn danger" id="logout">${icon("logout", 14)} ログアウト</button>
