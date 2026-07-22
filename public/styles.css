@@ -771,7 +771,7 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .money-cell .mc-inc { color: var(--accent); }
 .money-cell .mc-exp { color: var(--red); }
 /* 取引一覧: 日付ごとのグループ見出し。グレーの帯にして日付+その日の合計を乗せる（Zaim風） */
-.tx-date-group { margin-top: 10px; }
+.tx-date-group { margin-top: 22px; }
 .tx-date-group:first-child { margin-top: 0; }
 .tx-date-head {
   display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted);
