@@ -1181,6 +1181,10 @@ VIEWS.money = {
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入合計（全期間・確定分）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.totalIncome)}</p></div>
           <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出合計（全期間・確定分）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.totalExpense)}</p></div>
         </div>
+        <div style="border-top:1px solid var(--line);padding-top:12px">
+          <p class="small" style="color:var(--muted);margin:0 0 4px">最終予想残高（未収・引き落とし予定をすべて反映）</p>
+          <p style="margin:0;font-size:20px;font-weight:800;color:${fin.projectedBalance < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(fin.projectedBalance)}</p>
+        </div>
       </div>
       <div class="section">
         <div style="padding:16px 0 18px">
