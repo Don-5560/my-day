@@ -471,6 +471,8 @@ const fmtYenShort = (n) => {
   return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + "万";
 };
 const shiftMonth = (mk, n) => { const [y, m] = mk.split("-").map(Number); return monthKey(isoOf(new Date(y, m - 1 + n, 1))); };
+// 月ナビの下に添える期間表記（Zaim風）: 「7月1日－7月31日」
+const monthRangeLabel = (mk) => { const [y, m] = mk.split("-").map(Number); return `${m}月1日－${m}月${new Date(y, m, 0).getDate()}日`; };
 
 // 期間（開始日・終了日、どちらも任意）を「7/1〜9/30」のような短い表記にする
 const planPeriodLabel = (it) => (it.from || it.to ? `${it.from ? fmtShort(it.from) : "?"}〜${it.to ? fmtShort(it.to) : "?"}` : "");
@@ -605,7 +607,7 @@ function moneyCalGridHTML(mk, txs) {
       ${day?.expense ? `<span class="mc-exp">-${fmtYenShort(day.expense)}</span>` : ""}
     </button>`;
   }
-  return `<div class="cal-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-grid" id="moneyCalGrid">${cells}</div>`;
+  return `<div class="cal-wd money-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-grid" id="moneyCalGrid">${cells}</div>`;
 }
 // 取引一覧。日付ごとにグループ化し、タップで編集モーダルを開く。
 // 勤務先に紐づく収入は「支払い日ごとに1件」へまとめる（＝給料。個別の記録はタップで内訳表示）。
@@ -639,7 +641,7 @@ function moneyTxListHTML(txs, filterDay) {
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
       ${t.payoutStatus === "pending" ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
-      <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
     </div>`;
   };
   const bundleRow = (b) => {
@@ -652,19 +654,19 @@ function moneyTxListHTML(txs, filterDay) {
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(label)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(label)}<span class="tx-memo">（${b.items.length}件）</span></span>
       ${b.pending ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
-      <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(b.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : "-"}${fmtYen(b.amount)}</strong>
       <span class="cat-chev" style="margin-left:2px">${icon("chevR", 14, open ? "rot90" : "")}</span>
     </div>
     ${open ? `<div class="tx-sub-list">${b.items.map((t) => `<div class="row tx-sub" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
       <span class="tx-sub-date">${fmtShort(t.date)}</span>
       <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
-      <strong style="color:${inc ? "var(--green)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
     </div>`).join("")}</div>` : ""}`;
   };
   return groups.map((g) => {
     const net = g.items.reduce((s, e) => s + (e.type === "income" ? e.amount : -e.amount), 0);
     return `<div class="tx-date-group">
-      <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(net)}</strong></div>
+      <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--amber)" : "var(--accent)"}">${signedYen(net)}</strong></div>
       ${g.items.map((e) => e.bundle ? bundleRow(e) : singleRow(e)).join("")}
     </div>`;
   }).join("");
@@ -1185,20 +1187,21 @@ VIEWS.money = {
       </div>
       <div class="section">
         <div style="padding:16px 0 18px">
-          <div class="cal-nav" style="margin-bottom:10px">
+          <div class="mcal-nav">
             <button class="icon-btn" id="mcalPrev">${icon("chevR", 16, "flip")}</button>
-            <button class="btn ghost sm" id="mcalToday">今月</button>
+            <button type="button" class="mcal-pill" id="mcalToday">
+              ${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月 <small>（${monthRangeLabel(mk)}）</small>
+            </button>
             <button class="icon-btn" id="mcalNext">${icon("chevR", 16)}</button>
-            <span class="cal-title">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月</span>
           </div>
           ${moneyCalGridHTML(mk, txs)}
         </div>
       </div>
       <div class="section">
         <div style="padding:16px 0 18px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--green)">${fmtYen(fin.incomeThisMonth)}</p></div>
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:16.5px;font-weight:800;color:var(--red)">${fmtYen(fin.expenseThisMonth)}</p></div>
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:16.5px;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--ink)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入</p><p style="margin:0;font-size:20px;font-weight:800;color:var(--accent)">${fmtYen(fin.incomeThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:20px;font-weight:800;color:var(--amber)">${fmtYen(fin.expenseThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:20px;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--accent)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
         </div>
       </div>
       <div class="section">

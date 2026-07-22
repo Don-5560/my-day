@@ -417,10 +417,12 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .cat-tile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .cat-tile.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .cat-tile-add { color: var(--accent); }
-/* 取引一覧: カテゴリーをアイコンだけで表示（線の色=カテゴリー色。色はインラインstyleで指定） */
+/* 取引一覧: カテゴリーをアイコン+色付き丸チップで表示（色はインラインstyleのcolorで指定、
+   背景はcolor-mixでその色を薄く敷くので追加の変数は不要） */
 .cat-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; flex: 0 0 auto;
+  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
+  background: color-mix(in srgb, currentColor 15%, transparent);
 }
 /* 取引一覧: カテゴリー名の隣にメモを小さく（）付きで表示 */
 .tx-memo { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 2px; }
@@ -729,8 +731,20 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .cal-seg { flex-wrap: nowrap; }
 .cal-seg button { padding: 6px 12px; font-size: 12.5px; }
 
+/* 収支カレンダーの月ナビ（Zaim風）: クリーム色のピルに期間を表示。タップで今月に戻る */
+.mcal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.mcal-pill {
+  flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 5px;
+  background: rgba(245, 158, 11, .13); color: var(--ink); border: none; border-radius: 999px;
+  padding: 9px 10px; font: inherit; font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.mcal-pill small { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+
 /* 月グリッド */
 .cal-wd { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px; color: var(--faint); font-weight: 600; margin-bottom: 8px; }
+/* 収支カレンダーの曜日行だけ日曜=赤・土曜=青にする（一般カレンダーの.cal-wdはそのまま） */
+.cal-wd.money-wd span:first-child { color: var(--red); }
+.cal-wd.money-wd span:last-child { color: var(--accent); }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .cal-cell {
   aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
@@ -743,16 +757,23 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .cal-cell .cc-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: auto; }
 .cal-cell .cc-count { position: absolute; right: 5px; bottom: 4px; font-size: 9.5px; color: var(--muted); font-weight: 600; }
 .cal-cell .cc-star { position: absolute; top: 4px; right: 5px; color: var(--amber); }
-/* 収支カレンダー: 1日ごとの収入/支出を小さく表示するセル */
+/* 収支カレンダー: 1日ごとの収入/支出を小さく表示するセル。日曜列は日付を赤、土曜列は青に（Zaim風） */
 .money-cell { aspect-ratio: auto; min-height: 56px; gap: 1px; }
 .money-cell.selected { border-color: var(--accent); background: var(--accent-soft); }
+/* 今日のセルはクリーム色でハイライト（タップ選択中の青とは別の色にして区別する） */
+.money-cell.today { border-color: var(--amber); background: rgba(245, 158, 11, .13); }
+#moneyCalGrid .cal-cell:nth-child(7n+1) .cc-num { color: var(--red); }
+#moneyCalGrid .cal-cell:nth-child(7n) .cc-num { color: var(--accent); }
 .money-cell .mc-inc, .money-cell .mc-exp { font-size: 9.5px; font-weight: 700; line-height: 1.2; }
-.money-cell .mc-inc { color: var(--green); }
-.money-cell .mc-exp { color: var(--red); }
-/* 取引一覧: 日付ごとのグループ見出し */
-.tx-date-group { margin-top: 14px; }
+.money-cell .mc-inc { color: var(--accent); }
+.money-cell .mc-exp { color: var(--amber); }
+/* 取引一覧: 日付ごとのグループ見出し。グレーの帯にして日付+その日の合計を乗せる（Zaim風） */
+.tx-date-group { margin-top: 10px; }
 .tx-date-group:first-child { margin-top: 0; }
-.tx-date-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted); padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tx-date-head {
+  display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted);
+  padding: 7px 10px; margin: 0 0 2px; background: var(--surface-2); border-radius: 8px;
+}
 
 /* 時間グリッド（日/3日/週） */
 .cal-time { display: flex; overflow-x: auto; }
