@@ -29,9 +29,10 @@ VIEWS.learning = {
         ${statCard("chart", Math.round(items.reduce((s, i) => s + (i.progress || 0), 0) / (items.length || 1)) + "%", "平均進捗")}
         ${statCard("timer", fmtMin(Object.values(studyBySubject).reduce((a, b) => a + b, 0)) || "0分", "総学習時間")}
       </div>
-      <div class="grid2">
+      <div class="section-list">
         ${items.map((i) => `
-          <div class="card" style="margin-bottom:0">
+          <div class="section">
+          <div style="padding:16px 2px 18px">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
               <strong style="font-size:15px;flex:1">${esc(i.name)}</strong>
               ${i.progress >= 100 ? `<span class="pill grn">${icon("checkline", 11)} 習得</span>` : `<span class="pill acc">${i.progress || 0}%</span>`}
@@ -45,6 +46,7 @@ VIEWS.learning = {
               ${i.end ? `<span class="pill">目標 ${fmtShort(i.end)}</span>` : ""}
             </div>
             ${i.memo ? `<p class="small muted" style="margin:8px 0 0">${esc(i.memo)}</p>` : ""}
+          </div>
           </div>`).join("")}
       </div>`;
 
@@ -88,9 +90,10 @@ VIEWS.portfolio = {
         <div><p class="eyebrow">Portfolio</p><h1>ポートフォリオ</h1></div>
         <button class="btn" id="add">${icon("plus", 15)} 作品を追加</button>
       </div>
-      <div class="grid2">
+      <div class="section-list">
         ${items.map((p) => `
-          <div class="card" style="margin-bottom:0">
+          <div class="section">
+          <div style="padding:16px 2px 18px">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
               <strong style="font-size:15px;flex:1">${esc(p.title)}</strong>
               ${p.progress >= 100 ? '<span class="pill grn">完成</span>' : `<span class="pill acc">${p.progress || 0}%</span>`}
@@ -108,6 +111,7 @@ VIEWS.portfolio = {
               ${p.demo ? `<a class="btn ghost sm" href="${esc(p.demo)}" target="_blank" rel="noopener">${icon("external", 13)} デモ</a>` : ""}
             </div>
             ${p.memo ? `<p class="small muted" style="margin:10px 0 0">${esc(p.memo)}</p>` : ""}
+          </div>
           </div>`).join("") || '<p class="empty">まだ作品がありません。1つ目を作りましょう。</p>'}
       </div>`;
 
@@ -163,9 +167,11 @@ VIEWS.projects = {
         ${statCard("yen", fmtYen(totalAmt), "受注総額")}
         ${statCard("clock", fmtYen(unpaid), "入金待ち")}
       </div>
+      <div class="section-list">
       ${items.map((p) => {
         const over = p.deadline && p.deadline < todayStr() && (p.progress || 0) < 100;
-        return `<div class="card">
+        return `<div class="section">
+        <div style="padding:16px 2px 18px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
             <div style="flex:1;min-width:160px">
               <strong style="font-size:15px">${esc(p.name)}</strong>
@@ -184,8 +190,10 @@ VIEWS.projects = {
             <span class="pill acc">${p.progress || 0}%</span>
           </div>
           ${p.memo ? `<p class="small muted" style="margin:8px 0 0">${esc(p.memo)}</p>` : ""}
+        </div>
         </div>`;
-      }).join("") || '<p class="empty">案件はまだありません。最初の1件を獲りにいこう。</p>'}`;
+      }).join("") || '<p class="empty">案件はまだありません。最初の1件を獲りにいこう。</p>'}
+      </div>`;
 
     $("#add").addEventListener("click", async () => {
       const v = await modal("案件を追加", FIELDS, { invoice: "未請求", paid: "未入金" });
@@ -239,9 +247,9 @@ VIEWS.outreach = {
         ${statCard("trophy", rate(sum("orders"), sum("sent")), "受注率")}
       </div>
       <div class="grid2">
-        <div class="card" style="margin-bottom:0"><h2>${icon("chart", 15)} チャネル別 送信数</h2>${hbars(byCh)}</div>
-        <div class="card" style="margin-bottom:0">
-          <h2>${icon("calendar", 15)} 最近の記録</h2>
+        <div><p class="section-title">${icon("chart", 15)} チャネル別 送信数</p>${hbars(byCh)}</div>
+        <div>
+          <p class="section-title">${icon("calendar", 15)} 最近の記録</p>
           ${logs.slice(-8).reverse().map((l) => `
             <div class="row">
               <span class="pill acc">${esc(l.channel)}</span>
@@ -308,14 +316,16 @@ VIEWS.sales = {
         ${statCard("target", (diff >= 0 ? "+" : "") + fmtYen(diff).replace("¥-", "-¥"), "目標との差")}
       </div>
       <div class="grid2">
-        <div class="card" style="margin-bottom:0">
-          <h2>${icon("chart", 15)} 月別売上（6ヶ月）</h2>
+        <div>
+          <p class="section-title">${icon("chart", 15)} 月別売上（6ヶ月）</p>
           ${vbars(months.map(monthSum), months.map((m) => +m.slice(5) + "月"), fmtYen)}
         </div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("layers", 15)} 収入源別</h2>${hbars(bySource, fmtYen)}</div>
+        <div><p class="section-title">${icon("layers", 15)} 収入源別</p>${hbars(bySource, fmtYen)}</div>
       </div>
-      <div class="card" style="margin-top:18px">
-        <h2>${icon("calendar", 15)} 最近の記録</h2>
+      <div class="section-list" style="margin-top:8px">
+      <div class="section">
+      <div style="padding:16px 2px 18px">
+        <p class="section-title">${icon("calendar", 15)} 最近の記録</p>
         ${logs.slice(-10).reverse().map((l) => `
           <div class="row">
             <span class="pill acc">${esc(l.source)}</span>
@@ -323,6 +333,8 @@ VIEWS.sales = {
             <strong>${fmtYen(l.amount)}</strong>
             <button class="icon-btn danger row-del" data-del="${l.id}">${icon("trash", 13)}</button>
           </div>`).join("") || '<p class="empty">売上記録がありません</p>'}
+      </div>
+      </div>
       </div>`;
 
     $("#add").addEventListener("click", async () => {
