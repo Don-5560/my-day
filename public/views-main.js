@@ -632,7 +632,7 @@ VIEWS.todo = {
         <div><p class="eyebrow">Tasks</p><h1>Todo</h1></div>
         <button class="btn" id="addTodo">${icon("plus", 15)} 追加</button>
       </div>
-      <div class="section" style="border-top:1px solid var(--line);padding:16px 0 18px">
+      <div class="section-list"><div class="section" style="padding:16px 0 18px">
         <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
           <div style="position:relative;flex:1;min-width:180px">
             <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--faint)">${icon("search", 15)}</span>
@@ -641,7 +641,7 @@ VIEWS.todo = {
         </div>
         <div class="tabs" style="margin-bottom:0">${["すべて", ...CATS, ...(DB.categories.task || [])].map((c) =>
           `<button class="tab ${TODO_FILTER.cat === c ? "active" : ""}" data-cat="${c}">${c}</button>`).join("")}</div>
-      </div>
+      </div></div>
       <div class="todo-grid">${SECTIONS.map(sectionHTML).join("")}</div>`;
 
     const FIELDS = () => [
@@ -801,7 +801,7 @@ VIEWS.time = {
         ${statCard("trophy", (total / 60).toFixed(1), "総勉強時間", "時間")}
       </div>
 
-      <div class="grid2">
+      <div class="section-list"><div class="grid2">
         <div style="text-align:center">
           <p class="section-title" style="justify-content:center">${icon("timer", 15)} ポモドーロ</p>
           <div class="seg" id="pomoDur">
@@ -826,7 +826,7 @@ VIEWS.time = {
             <button class="btn ghost sm" id="manualAdd">${icon("plus", 14)} 手動で記録を追加</button>
           </div>
         </div>
-      </div>
+      </div></div>
 
       <div class="section-list">
       <div class="section">

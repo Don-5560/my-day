@@ -246,7 +246,7 @@ VIEWS.outreach = {
         ${statCard("chart", rate(sum("replies"), sum("sent")), "返信率")}
         ${statCard("trophy", rate(sum("orders"), sum("sent")), "受注率")}
       </div>
-      <div class="grid2">
+      <div class="section-list"><div class="grid2">
         <div><p class="section-title">${icon("chart", 15)} チャネル別 送信数</p>${hbars(byCh)}</div>
         <div>
           <p class="section-title">${icon("calendar", 15)} 最近の記録</p>
@@ -257,7 +257,7 @@ VIEWS.outreach = {
               <button class="icon-btn danger row-del" data-del="${l.id}">${icon("trash", 13)}</button>
             </div>`).join("") || '<p class="empty">記録がありません</p>'}
         </div>
-      </div>`;
+      </div></div>`;
 
     $("#add").addEventListener("click", async () => {
       const v = await modal("営業を記録", [
@@ -315,14 +315,14 @@ VIEWS.sales = {
         ${statCard(monthProfit(mk) >= 0 ? "trophy" : "clock", fmtYen(monthProfit(mk)).replace("¥-", "-¥"), "今月の利益")}
         ${statCard("target", (diff >= 0 ? "+" : "") + fmtYen(diff).replace("¥-", "-¥"), "目標との差")}
       </div>
-      <div class="grid2">
+      <div class="section-list"><div class="grid2">
         <div>
           <p class="section-title">${icon("chart", 15)} 月別売上（6ヶ月）</p>
           ${vbars(months.map(monthSum), months.map((m) => +m.slice(5) + "月"), fmtYen)}
         </div>
         <div><p class="section-title">${icon("layers", 15)} 収入源別</p>${hbars(bySource, fmtYen)}</div>
-      </div>
-      <div class="section-list" style="margin-top:8px">
+      </div></div>
+      <div class="section-list">
       <div class="section">
       <div style="padding:16px 2px 18px">
         <p class="section-title">${icon("calendar", 15)} 最近の記録</p>
@@ -1174,10 +1174,10 @@ VIEWS.money = {
       </div>
       ${MONEY_TAB === "breakdown" ? `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月の内訳です。月を変えたい場合は「収支」タブで移動してください。</p>
-      <div class="grid2">
+      <div class="section-list"><div class="grid2">
         <div><p class="section-title">${icon("layers", 15)} 収入（内訳）</p>${hbars(incomeRows, fmtYen)}</div>
         <div><p class="section-title">${icon("layers", 15)} 支出（内訳）</p>${hbars(expenseRows, fmtYen)}</div>
-      </div>` : MONEY_TAB === "actual" ? `
+      </div></div>` : MONEY_TAB === "actual" ? `
       <div class="section-list">
       <div class="section">
         <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 残高</p>
@@ -1207,11 +1207,13 @@ VIEWS.money = {
       </div>
       </div>` : `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">ブロックを自由に追加して、時系列で予想の収支を組み立てられます。内容は保存され、あとから見返せます。</p>
+      <div class="section-list">
       <div class="section">
         <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 現在の残高</p>
         <p class="section-highlight" style="margin-bottom:18px">${signedYen(fin.currentBalance)}</p>
       </div>
       ${blocksHtml}
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
         <button class="btn ghost sm" data-block-add="income">${icon("plus", 13)} 収入ブロック</button>
         <button class="btn ghost sm" data-block-add="expense">${icon("plus", 13)} 支出ブロック</button>
@@ -1522,12 +1524,12 @@ VIEWS.analytics = {
         ${statCard("check", DB.todos.items.filter((t) => t.done).length, "完了したTodo", "件")}
         ${statCard("zap", levelInfo().total, "総獲得XP")}
       </div>
-      <div class="grid2">
+      <div class="section-list"><div class="grid2">
         <div><p class="section-title">${icon("calendar", 15)} 曜日別 平均勉強時間</p>${vbars(wdAvg, WD, fmtMin)}</div>
         <div><p class="section-title">${icon("timer", 15)} 勉強時間の推移（14日）</p>${vbars(mins14, days14.map(fmtShort), fmtMin)}</div>
         <div><p class="section-title">${icon("yen", 15)} 売上の推移（6ヶ月）</p>${vbars(salesByMonth, months.map((m) => +m.slice(5) + "月"), fmtYen)}</div>
         <div><p class="section-title">${icon("check", 15)} 何に時間を使ったか（完了Todo）</p>${hbars(doneByCat, (v) => v + "件")}</div>
-      </div>`;
+      </div></div>`;
   },
 };
 

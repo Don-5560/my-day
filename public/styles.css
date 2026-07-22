@@ -266,37 +266,49 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 @media (max-width: 960px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
 
-/* ===== セクション（カードを廃止したフラットリスト＋アコーディオン） ===== */
-/* .card の箱（背景/枠線/影/角丸）をやめ、見出し＋横線区切りだけにして余白を減らす。
+/* ===== セクション（フラットリスト＋アコーディオン。箱は「項目ごと」ではなく「グループ全体」に1枚だけ） ===== */
+/* 個々の項目を .card で囲むのはやめ、見出し＋横線区切りにして余白を圧縮しつつ、
+   関連するセクション/行の集まり全体を .section-list で1枚の柔らかい箱にまとめることで視認性を確保する。
    開閉はJSでclassList/displayを直接切り替える（作り直すとチカチカするため、他のモーダル類と同じ方針） */
-.section-list { border-top: 1px solid var(--line); }
+.section-list {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 4px 16px; margin-bottom: 18px;
+}
 .section { border-bottom: 1px solid var(--line); }
+.section:last-child { border-bottom: none; }
 .section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  width: 100%; padding: 15px 2px; background: none; border: none; font: inherit;
+  width: 100%; padding: 16px 0; background: none; border: none; font: inherit;
   text-align: left; cursor: pointer; color: inherit; -webkit-tap-highlight-color: transparent;
 }
 .section-head h2 {
   margin: 0; font-size: 14px; font-weight: 700; color: var(--ink);
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 10px;
 }
-.section-head h2 .ic { color: var(--accent); }
-.section-sub { margin: 2px 0 0 27px; font-size: 12.5px; color: var(--muted); }
+.section-sub { margin: 3px 0 0 36px; font-size: 12.5px; color: var(--muted); }
 .section-chevron { color: var(--faint); display: inline-flex; flex: 0 0 auto; transition: transform .18s; }
 .section.open > .section-head .section-chevron { transform: rotate(90deg); }
-.section-body { padding: 2px 2px 18px; }
-.section-highlight { font-size: 26px; font-weight: 800; margin: 2px 0 0; }
+.section-body { padding: 0 0 20px; }
+.section-highlight { font-size: 26px; font-weight: 800; margin: 4px 0 0; }
 /* 常に開いたまま（アコーディオンにしない）見出し。カレンダー・取引一覧など常時見せたい内容に使う */
-.section-title { margin: 0 0 12px; font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 9px; }
-.section-title .ic { color: var(--accent); }
+.section-title { margin: 0 0 12px; font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 10px; }
+/* 見出しアイコンに色付きの丸チップを添えて、フラット化で失った「色」を補う（統計タイルの s-ic/hs-ic と同じ意匠） */
+.section-head h2 .ic, .section-title .ic {
+  width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent);
+}
 /* リスト項目（勤務先・カード・予想収支ブロックなど）: 箱をやめて横線区切りの行にする。
    既存の .list-item（予定・活動リスト用、display:flexの別レイアウト）と名前が衝突しないよう別名にする */
 .flat-row {
-  display: block; width: 100%; text-align: left; padding: 14px 2px; border-bottom: 1px solid var(--line);
+  display: block; width: 100%; text-align: left; padding: 14px 0; border-bottom: 1px solid var(--line);
   background: none; border-left: none; border-right: none; border-top: none; border-radius: 0;
   font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: background-color .15s;
 }
 .flat-row:last-child { border-bottom: none; }
+.flat-row:active { background-color: var(--surface-2); }
+.section-head:active { background-color: var(--surface-2); }
 
 /* ===== 今日のタスク（サマリー） ===== */
 
