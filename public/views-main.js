@@ -802,8 +802,8 @@ VIEWS.time = {
       </div>
 
       <div class="grid2">
-        <div class="card" style="text-align:center">
-          <h2 style="justify-content:center">${icon("timer", 15)} ポモドーロ</h2>
+        <div style="text-align:center">
+          <p class="section-title" style="justify-content:center">${icon("timer", 15)} ポモドーロ</p>
           <div class="seg" id="pomoDur">
             ${[25, 50, 90].map((m) => `<button class="${POMO.dur === m * 60 ? "active" : ""}" data-min="${m}">${m}分</button>`).join("")}
           </div>
@@ -819,8 +819,8 @@ VIEWS.time = {
           <p class="hint" style="margin-top:14px">終了すると自動で勉強時間に記録され、XPが入ります</p>
         </div>
 
-        <div class="card">
-          <h2>${icon("chart", 15)} 直近14日の勉強時間</h2>
+        <div>
+          <p class="section-title">${icon("chart", 15)} 直近14日の勉強時間</p>
           ${vbars(mins14, days14.map(fmtShort), fmtMin)}
           <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px">
             <button class="btn ghost sm" id="manualAdd">${icon("plus", 14)} 手動で記録を追加</button>
@@ -828,11 +828,15 @@ VIEWS.time = {
         </div>
       </div>
 
-      <div class="card">
-        <h2>${icon("book", 15)} 科目別（累計）</h2>
-        ${hbars(Object.entries(logs.reduce((m, l) => (m[l.subject] = (m[l.subject] || 0) + l.min, m), {}))
-          .sort((a, b) => b[1] - a[1]).slice(0, 8)
-          .map(([label, value]) => ({ label, value })), fmtMin)}
+      <div class="section-list">
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <p class="section-title">${icon("book", 15)} 科目別（累計）</p>
+          ${hbars(Object.entries(logs.reduce((m, l) => (m[l.subject] = (m[l.subject] || 0) + l.min, m), {}))
+            .sort((a, b) => b[1] - a[1]).slice(0, 8)
+            .map(([label, value]) => ({ label, value })), fmtMin)}
+        </div>
+      </div>
       </div>`;
 
     $$("#pomoDur button").forEach((b) => b.addEventListener("click", () => {
@@ -874,24 +878,32 @@ VIEWS.report = {
       <div class="page-head"><div><p class="eyebrow">Daily Report</p><h1>日報</h1></div>
         <span class="pill acc">${fmtJP(todayStr())}</span></div>
 
-      <div class="card">
-        <h2>${icon("smile", 15)} 今日の気分</h2>
-        <div class="mood-row">${MOODS.map((m) => `<button class="mood-btn ${d.mood === m ? "active" : ""}" data-mood="${m}">${icon(m, 22)}</button>`).join("")}</div>
+      <div class="section-list">
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <p class="section-title">${icon("smile", 15)} 今日の気分</p>
+          <div class="mood-row">${MOODS.map((m) => `<button class="mood-btn ${d.mood === m ? "active" : ""}" data-mood="${m}">${icon(m, 22)}</button>`).join("")}</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2>${icon("file", 15)} 今日やったこと</h2>
-        <textarea id="rDiary" placeholder="今日の作業・学習・気づき…">${esc(d.diary || "")}</textarea>
-        <h2 style="margin-top:16px">${icon("rotate", 15)} 反省</h2>
-        <textarea id="rReflect" style="min-height:70px" placeholder="改善したいこと…">${esc(d.reflect || "")}</textarea>
-        <h2 style="margin-top:16px">${icon("target", 15)} 明日の目標</h2>
-        <textarea id="rTomorrow" style="min-height:70px" placeholder="明日やること…">${esc(d.tomorrow || "")}</textarea>
-        <p class="small muted" id="rState" style="margin:10px 2px 0;height:16px"></p>
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <p class="section-title">${icon("file", 15)} 今日やったこと</p>
+          <textarea id="rDiary" placeholder="今日の作業・学習・気づき…">${esc(d.diary || "")}</textarea>
+          <p class="section-title" style="margin-top:16px">${icon("rotate", 15)} 反省</p>
+          <textarea id="rReflect" style="min-height:70px" placeholder="改善したいこと…">${esc(d.reflect || "")}</textarea>
+          <p class="section-title" style="margin-top:16px">${icon("target", 15)} 明日の目標</p>
+          <textarea id="rTomorrow" style="min-height:70px" placeholder="明日やること…">${esc(d.tomorrow || "")}</textarea>
+          <p class="small muted" id="rState" style="margin:10px 2px 0;height:16px"></p>
+        </div>
       </div>
 
-      <div class="card">
-        <h2>${icon("calendar", 15)} 過去の日報</h2>
-        <div id="pastReports"><p class="empty">読み込み中…</p></div>
+      <div class="section">
+        <div style="padding:16px 0 18px">
+          <p class="section-title">${icon("calendar", 15)} 過去の日報</p>
+          <div id="pastReports"><p class="empty">読み込み中…</p></div>
+        </div>
+      </div>
       </div>`;
 
     const save = () => {
@@ -951,9 +963,9 @@ VIEWS.habits = {
         <div><p class="eyebrow">Habits</p><h1>習慣</h1></div>
         <button class="btn" id="addHabit">${icon("plus", 15)} 追加</button>
       </div>
-      <div class="card">
+      <div class="section-list">
         ${H.list.map((h) => `
-          <div class="row" style="padding:13px 8px">
+          <div class="list-item" style="padding:13px 2px">
             <button class="icon-btn" data-toggle="${h.id}" style="width:38px;height:38px;border-radius:11px;
               ${isChecked(h.id, todayStr())
                 ? "background:var(--accent);color:#fff"
