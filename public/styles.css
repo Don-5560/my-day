@@ -731,11 +731,11 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .cal-seg { flex-wrap: nowrap; }
 .cal-seg button { padding: 6px 12px; font-size: 12.5px; }
 
-/* 収支カレンダーの月ナビ（Zaim風）: クリーム色のピルに期間を表示。タップで今月に戻る */
+/* 収支カレンダーの月ナビ（Zaim風）: ピルに期間を表示。タップで今月に戻る */
 .mcal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .mcal-pill {
   flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 5px;
-  background: rgba(245, 158, 11, .13); color: var(--ink); border: none; border-radius: 999px;
+  background: var(--surface-2); color: var(--ink); border: none; border-radius: 999px;
   padding: 9px 10px; font: inherit; font-size: 15px; font-weight: 800; cursor: pointer;
 }
 .mcal-pill small { font-size: 11.5px; font-weight: 600; color: var(--muted); }
@@ -757,16 +757,19 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .cal-cell .cc-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: auto; }
 .cal-cell .cc-count { position: absolute; right: 5px; bottom: 4px; font-size: 9.5px; color: var(--muted); font-weight: 600; }
 .cal-cell .cc-star { position: absolute; top: 4px; right: 5px; color: var(--amber); }
-/* 収支カレンダー: 1日ごとの収入/支出を小さく表示するセル。日曜列は日付を赤、土曜列は青に（Zaim風） */
-.money-cell { aspect-ratio: auto; min-height: 56px; gap: 1px; }
+/* 収支カレンダー: 1日ごとの収入/支出を表示するセル。正方形ではなく横長にして日付列を圧迫しないようにする。
+   日曜列は日付を赤、土曜列は青に（Zaim風）。金額は省略せず全桁表示するので、多い日は自然に折り返して高さが伸びる */
+#moneyCalGrid { gap: 3px; }
+.money-cell { aspect-ratio: auto; min-height: 40px; padding: 5px 3px 3px; gap: 0; }
 .money-cell.selected { border-color: var(--accent); background: var(--accent-soft); }
-/* 今日のセルはクリーム色でハイライト（タップ選択中の青とは別の色にして区別する） */
-.money-cell.today { border-color: var(--amber); background: rgba(245, 158, 11, .13); }
 #moneyCalGrid .cal-cell:nth-child(7n+1) .cc-num { color: var(--red); }
 #moneyCalGrid .cal-cell:nth-child(7n) .cc-num { color: var(--accent); }
-.money-cell .mc-inc, .money-cell .mc-exp { font-size: 9.5px; font-weight: 700; line-height: 1.2; }
+.money-cell .mc-inc, .money-cell .mc-exp {
+  font-size: 9px; font-weight: 700; line-height: 1.15; letter-spacing: -.2px;
+  max-width: 100%; overflow-wrap: anywhere;
+}
 .money-cell .mc-inc { color: var(--accent); }
-.money-cell .mc-exp { color: var(--amber); }
+.money-cell .mc-exp { color: var(--red); }
 /* 取引一覧: 日付ごとのグループ見出し。グレーの帯にして日付+その日の合計を乗せる（Zaim風） */
 .tx-date-group { margin-top: 10px; }
 .tx-date-group:first-child { margin-top: 0; }

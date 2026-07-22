@@ -312,8 +312,8 @@ VIEWS.sales = {
       <div class="stat-grid">
         ${statCard("yen", fmtYen(monthSum(mk)), "今月の売上")}
         ${statCard("wallet", fmtYen(monthCost(mk)), "今月の経費")}
-        ${statCard(monthProfit(mk) >= 0 ? "trophy" : "clock", fmtYen(monthProfit(mk)).replace("¥-", "-¥"), "今月の利益")}
-        ${statCard("target", (diff >= 0 ? "+" : "") + fmtYen(diff).replace("¥-", "-¥"), "目標との差")}
+        ${statCard(monthProfit(mk) >= 0 ? "trophy" : "clock", fmtYen(monthProfit(mk)), "今月の利益")}
+        ${statCard("target", (diff >= 0 ? "+" : "") + fmtYen(diff), "目標との差")}
       </div>
       <div class="section-list"><div class="grid2">
         <div>
@@ -424,7 +424,7 @@ async function ensureCategoriesMigrated() {
 }
 // 取引の category（文字列）からアイコン・色を引く。見つからない/未分類の取引は既定アイコン＋グレーでフォールバック
 const catMeta = (name, kind) => moneyCatList(kind).find((c) => c.name === name) || { name, icon: "grid", color: DEFAULT_CAT_COLOR };
-const signedYen = (n) => (n < 0 ? "-" : "") + "¥" + Math.abs(Number(n) || 0).toLocaleString();
+const signedYen = (n) => (n < 0 ? "-" : "") + Math.abs(Number(n) || 0).toLocaleString() + "円";
 // 勤務先マスタ（給与体系・支払いサイクル）
 const employerById = (id) => (DB.employers?.items || []).find((e) => e.id === id);
 // 収入カテゴリーが勤務先に紐づいている場合、その勤務先を返す（支出カテゴリーは常にnull）。
@@ -463,13 +463,6 @@ let MONEY_TAB = "actual"; // "actual"=収支（実績） / "plan"=予想収支
 let MONEY_MONTH = null; // "YYYY-MM"。nullなら当月
 let MONEY_CAL_DAY = null; // カレンダーで選択中の日（nullなら月全体を表示）
 const EXPANDED_TX_BUNDLES = new Set(); // 展開中の「給料まとめ」行のキー（employerId|payoutDate）
-// カレンダーの枠に収めるための短い金額表記（1万円未満はそのまま、以上は「15万」のように丸める）
-const fmtYenShort = (n) => {
-  n = Math.round(Number(n) || 0);
-  if (Math.abs(n) < 10000) return n.toLocaleString();
-  const v = Math.round(n / 1000) / 10;
-  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + "万";
-};
 const shiftMonth = (mk, n) => { const [y, m] = mk.split("-").map(Number); return monthKey(isoOf(new Date(y, m - 1 + n, 1))); };
 // 月ナビの下に添える期間表記（Zaim風）: 「7月1日－7月31日」
 const monthRangeLabel = (mk) => { const [y, m] = mk.split("-").map(Number); return `${m}月1日－${m}月${new Date(y, m, 0).getDate()}日`; };
@@ -603,8 +596,8 @@ function moneyCalGridHTML(mk, txs) {
     const cls = ["cal-cell", "money-cell", other ? "other" : "", iso === today ? "today" : "", MONEY_CAL_DAY === iso ? "selected" : ""].join(" ");
     cells += `<button class="${cls}" ${other ? "" : `data-mday="${iso}"`}>
       <span class="cc-num">${d.getDate()}</span>
-      ${day?.income ? `<span class="mc-inc">+${fmtYenShort(day.income)}</span>` : ""}
-      ${day?.expense ? `<span class="mc-exp">-${fmtYenShort(day.expense)}</span>` : ""}
+      ${day?.income ? `<span class="mc-inc">+${Math.round(day.income).toLocaleString()}</span>` : ""}
+      ${day?.expense ? `<span class="mc-exp">-${Math.round(day.expense).toLocaleString()}</span>` : ""}
     </button>`;
   }
   return `<div class="cal-wd money-wd">${WD_JP.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-grid" id="moneyCalGrid">${cells}</div>`;
@@ -641,7 +634,7 @@ function moneyTxListHTML(txs, filterDay) {
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
       ${t.payoutStatus === "pending" ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
-      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
     </div>`;
   };
   const bundleRow = (b) => {
@@ -654,19 +647,19 @@ function moneyTxListHTML(txs, filterDay) {
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(label)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(label)}<span class="tx-memo">（${b.items.length}件）</span></span>
       ${b.pending ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
-      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : "-"}${fmtYen(b.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(b.amount)}</strong>
       <span class="cat-chev" style="margin-left:2px">${icon("chevR", 14, open ? "rot90" : "")}</span>
     </div>
     ${open ? `<div class="tx-sub-list">${b.items.map((t) => `<div class="row tx-sub" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
       <span class="tx-sub-date">${fmtShort(t.date)}</span>
       <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
-      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
     </div>`).join("")}</div>` : ""}`;
   };
   return groups.map((g) => {
     const net = g.items.reduce((s, e) => s + (e.type === "income" ? e.amount : -e.amount), 0);
     return `<div class="tx-date-group">
-      <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--amber)" : "var(--accent)"}">${signedYen(net)}</strong></div>
+      <div class="tx-date-head"><span>${fmtDateFull(g.date)}</span><strong style="color:${net < 0 ? "var(--red)" : "var(--accent)"}">${signedYen(net)}</strong></div>
       ${g.items.map((e) => e.bundle ? bundleRow(e) : singleRow(e)).join("")}
     </div>`;
   }).join("");
@@ -914,7 +907,7 @@ function employerListHTML(items, pendingMap) {
   if (!items.length) return '<p class="empty">まだ勤務先が登録されていません</p>';
   return items.map((e) => {
     const p = pendingMap[e.id];
-    const wage = e.wageType === "hourly" ? `時給¥${Number(e.hourlyWage || 0).toLocaleString()}` : "歩合制";
+    const wage = e.wageType === "hourly" ? `時給${Number(e.hourlyWage || 0).toLocaleString()}円` : "歩合制";
     const cycle = e.payCycle === "weekly" ? `週払い（${WD_SHORT[WD_KEYS.indexOf(e.weeklyPayDay)] || ""}曜日）` : `月払い（${e.closingDay || 31}日締め翌${e.paymentDay || 25}日払い）`;
     return `<button type="button" class="flat-row" data-emp-open="${e.id}">
       <p class="section-title" style="margin-bottom:2px">${icon("briefcase", 15)} ${esc(e.name)}</p>
@@ -1199,9 +1192,9 @@ VIEWS.money = {
       </div>
       <div class="section">
         <div style="padding:16px 0 18px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入</p><p style="margin:0;font-size:20px;font-weight:800;color:var(--accent)">${fmtYen(fin.incomeThisMonth)}</p></div>
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:20px;font-weight:800;color:var(--amber)">${fmtYen(fin.expenseThisMonth)}</p></div>
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:20px;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--accent)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入</p><p style="margin:0;font-size:clamp(13px,4.2vw,18px);white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.incomeThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出</p><p style="margin:0;font-size:clamp(13px,4.2vw,18px);white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.expenseThisMonth)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">合計</p><p style="margin:0;font-size:clamp(13px,4.2vw,18px);white-space:nowrap;font-weight:800;color:${fin.netThisMonth >= 0 ? "var(--accent)" : "var(--red)"}">${signedYen(fin.netThisMonth)}</p></div>
         </div>
       </div>
       <div class="section">

@@ -28,7 +28,7 @@ function todayStr(offset = 0) {
 }
 const fmtJP = (iso) => { const d = new Date(iso + "T00:00:00"); return `${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）`; };
 const fmtShort = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
-const fmtYen = (n) => "¥" + Number(n || 0).toLocaleString();
+const fmtYen = (n) => Number(n || 0).toLocaleString() + "円";
 const monthKey = (iso) => iso.slice(0, 7);
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}` : `${m}分`);
 const fmtHM = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? " " + (m % 60) + "m" : ""}` : `${m}m`); // 2h 15m / 45m
