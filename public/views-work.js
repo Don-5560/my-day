@@ -1376,7 +1376,9 @@ VIEWS.goals = {
       </div>
       <div class="tabs">${Object.entries(GOAL_TABS).map(([k, l]) =>
         `<button class="tab ${GOAL_TAB === k ? "active" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
-      <div class="card">
+      <div class="section-list">
+      <div class="section">
+      <div style="padding:16px 2px 18px">
         <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
           ${ring(avg)}
           <div><strong style="font-size:16px">${GOAL_TABS[GOAL_TAB]}の目標</strong>
@@ -1391,6 +1393,8 @@ VIEWS.goals = {
             </div>
             <input type="range" min="0" max="100" step="5" value="${g.progress || 0}" data-slide="${g.id}">
           </div>`).join("") || '<p class="empty">目標を追加して、人生の方向を決めよう</p>'}
+      </div>
+      </div>
       </div>`;
 
     $$("[data-tab]").forEach((b) => b.addEventListener("click", () => { GOAL_TAB = b.dataset.tab; rerender(); }));
@@ -1519,10 +1523,10 @@ VIEWS.analytics = {
         ${statCard("zap", levelInfo().total, "総獲得XP")}
       </div>
       <div class="grid2">
-        <div class="card" style="margin-bottom:0"><h2>${icon("calendar", 15)} 曜日別 平均勉強時間</h2>${vbars(wdAvg, WD, fmtMin)}</div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("timer", 15)} 勉強時間の推移（14日）</h2>${vbars(mins14, days14.map(fmtShort), fmtMin)}</div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("yen", 15)} 売上の推移（6ヶ月）</h2>${vbars(salesByMonth, months.map((m) => +m.slice(5) + "月"), fmtYen)}</div>
-        <div class="card" style="margin-bottom:0"><h2>${icon("check", 15)} 何に時間を使ったか（完了Todo）</h2>${hbars(doneByCat, (v) => v + "件")}</div>
+        <div><p class="section-title">${icon("calendar", 15)} 曜日別 平均勉強時間</p>${vbars(wdAvg, WD, fmtMin)}</div>
+        <div><p class="section-title">${icon("timer", 15)} 勉強時間の推移（14日）</p>${vbars(mins14, days14.map(fmtShort), fmtMin)}</div>
+        <div><p class="section-title">${icon("yen", 15)} 売上の推移（6ヶ月）</p>${vbars(salesByMonth, months.map((m) => +m.slice(5) + "月"), fmtYen)}</div>
+        <div><p class="section-title">${icon("check", 15)} 何に時間を使ったか（完了Todo）</p>${hbars(doneByCat, (v) => v + "件")}</div>
       </div>`;
   },
 };
@@ -1584,7 +1588,7 @@ VIEWS.calendar = {
         <div class="seg cal-seg">${Object.entries(CAL_LABELS).map(([v, l]) => `<button class="${CAL.view === v ? "active" : ""}" data-cv="${v}">${l}</button>`).join("")}</div>
       </div>
       <div class="card" id="calBody"><p class="empty">読み込み中…</p></div>
-      <div class="card" id="calDetail" style="display:none"></div>`;
+      <div class="section-list" id="calDetailWrap" style="display:none"><div class="section"><div id="calDetail" style="padding:16px 2px 18px"></div></div></div>`;
 
     $("#calPrev").addEventListener("click", () => { calShift(-1); rerender(); });
     $("#calNext").addEventListener("click", () => { calShift(1); rerender(); });
@@ -1684,9 +1688,9 @@ function calShowDetail(iso) {
   const sales = DB.sales.logs.filter((l) => l.date === iso).reduce((s, l) => s + l.amount, 0);
   const tasks = day ? [...day.tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")) : [];
   const el = $("#calDetail");
-  el.style.display = "";
+  $("#calDetailWrap").style.display = "";
   el.innerHTML = `
-    <div class="card-head"><h2>${icon("calendar", 15)} ${fmtJP(iso)}</h2>
+    <div class="card-head"><p class="section-title" style="margin-bottom:0">${icon("calendar", 15)} ${fmtJP(iso)}</p>
       <button class="btn ghost sm" id="calAddTask">${icon("plus", 14)} 追加</button></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <span class="pill acc">${icon("zap", 11)} ${xp} XP</span>
