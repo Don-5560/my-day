@@ -634,7 +634,7 @@ function moneyTxListHTML(txs, filterDay) {
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(meta.name)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(meta.name)}${t.memo ? `<span class="tx-memo">（${esc(t.memo)}）</span>` : ""}</span>
       ${t.payoutStatus === "pending" ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
-      <strong style="color:${inc ? "var(--accent)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : ""}${fmtYen(t.amount)}</strong>
     </div>`;
   };
   const bundleRow = (b) => {
@@ -647,13 +647,13 @@ function moneyTxListHTML(txs, filterDay) {
       <span class="cat-badge" style="color:${meta.color}" aria-label="${esc(label)}">${icon(meta.icon, 22)}</span>
       <span class="row-title">${esc(label)}<span class="tx-memo">（${b.items.length}件）</span></span>
       ${b.pending ? `<span class="pill ${inc ? "amb" : "vio"}">${inc ? "未収" : "引き落とし予定"}</span>` : ""}
-      <strong style="color:${inc ? "var(--accent)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(b.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : ""}${fmtYen(b.amount)}</strong>
       <span class="cat-chev" style="margin-left:2px">${icon("chevR", 14, open ? "rot90" : "")}</span>
     </div>
     ${open ? `<div class="tx-sub-list">${b.items.map((t) => `<div class="row tx-sub" data-tx-open="${t.id}" role="button" tabindex="0" style="cursor:pointer">
       <span class="tx-sub-date">${fmtShort(t.date)}</span>
       <span class="row-title small">${t.memo ? esc(t.memo) : ""}</span>
-      <strong style="color:${inc ? "var(--accent)" : "var(--red)"}">${inc ? "+" : "-"}${fmtYen(t.amount)}</strong>
+      <strong style="color:${inc ? "var(--accent)" : "var(--ink)"}">${inc ? "+" : ""}${fmtYen(t.amount)}</strong>
     </div>`).join("")}</div>` : ""}`;
   };
   return groups.map((g) => {
