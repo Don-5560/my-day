@@ -1282,11 +1282,14 @@ VIEWS.money = {
       </div></div>` : MONEY_TAB === "actual" ? `
       <div class="section-list">
       <div class="section">
-        <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 残高</p>
-        <p class="section-highlight" style="margin-bottom:14px">${signedYen(fin.currentBalance)}</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;border-top:1px solid var(--line);margin-top:2px;padding:12px 0 18px">
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入合計（全期間・確定分）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.totalIncome)}</p></div>
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出合計（全期間・確定分）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.totalExpense)}</p></div>
+        <p class="section-title" style="margin-top:16px">${icon("layers", 15)} 全期間の収支</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;padding:2px 0 14px">
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入合計（未収を含む）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.totalIncome)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出合計（引き落とし予定を含む）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.totalExpense)}</p></div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:14px">
+          <p class="small" style="color:var(--muted);margin:0 0 4px">確定残高（今の口座残高・未収/引き落とし予定を除く）</p>
+          <p class="section-highlight" style="margin-bottom:14px">${signedYen(fin.currentBalance)}</p>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:12px">
           <p class="small" style="color:var(--muted);margin:0 0 4px">最終予想残高（未収・引き落とし予定をすべて反映）</p>
