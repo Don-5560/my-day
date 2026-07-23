@@ -32,20 +32,21 @@ VIEWS.learning = {
       <div class="section-list">
         ${items.map((i) => `
           <div class="section">
-          <div style="padding:16px 2px 18px">
+          <div style="padding:16px 2px 18px;cursor:pointer" data-notes="${i.id}" role="button" tabindex="0">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
               <strong style="font-size:15px;flex:1">${esc(i.name)}</strong>
               ${i.progress >= 100 ? `<span class="pill grn">${icon("checkline", 11)} 習得</span>` : `<span class="pill acc">${i.progress || 0}%</span>`}
-              ${i.link ? `<a class="icon-btn" href="${esc(i.link)}" target="_blank" rel="noopener">${icon("external", 14)}</a>` : ""}
+              ${i.link ? `<a class="icon-btn" href="${esc(i.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${icon("external", 14)}</a>` : ""}
               <button class="icon-btn" data-edit="${i.id}">${icon("edit", 14)}</button>
             </div>
             <div class="bar ${i.progress >= 100 ? "grn" : ""}"><i style="width:${i.progress || 0}%"></i></div>
             <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" class="small muted">
-              ${studyBySubject[i.name] ? `<span class="pill">${fmtMin(studyBySubject[i.name])}</span>` : ""}
+              ${studyBySubject[i.name] ? `<span class="pill">${icon("book", 10)} ${fmtMin(studyBySubject[i.name])}</span>` : ""}
               ${i.start ? `<span class="pill">開始 ${fmtShort(i.start)}</span>` : ""}
               ${i.end ? `<span class="pill">目標 ${fmtShort(i.end)}</span>` : ""}
             </div>
             ${i.memo ? `<p class="small muted" style="margin:8px 0 0">${esc(i.memo)}</p>` : ""}
+            <p class="small" style="margin:8px 0 0;color:var(--accent)">${icon("book", 11)} タップしてノートを見る</p>
           </div>
           </div>`).join("")}
       </div>`;
@@ -56,7 +57,8 @@ VIEWS.learning = {
       DB.learning.items.push({ id: uid(), ...v });
       await saveDb("learning"); rerender();
     });
-    $$("[data-edit]").forEach((b) => b.addEventListener("click", async () => {
+    $$("[data-edit]").forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
       const i = DB.learning.items.find((x) => x.id === b.dataset.edit);
       const v = await modal(i.name + " を編集", FIELDS, i);
       if (!v) return;
@@ -66,6 +68,18 @@ VIEWS.learning = {
       if (was < 100 && v.progress >= 100) { await addXP(100, `${i.name} 習得！`); }
       rerender();
     }));
+    // タップでその科目の学習ノート一覧（タイマーページ）へ絞り込みジャンプ
+    $$("[data-notes]").forEach((el) => {
+      const open = () => {
+        const i = DB.learning.items.find((x) => x.id === el.dataset.notes);
+        if (!i) return;
+        NOTE_FILTER = { subject: i.name, tag: "", from: "", to: "" };
+        go("time");
+        setTimeout(() => $("#noteList")?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
   },
 };
 
