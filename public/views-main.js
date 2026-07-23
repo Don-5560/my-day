@@ -588,14 +588,31 @@ async function addStudyLog(v) {
 // ===== 学習ノート（自由記述・部分装飾対応の本文を持つ学習ログ） =====
 
 let NOTE_FILTER = { subject: "すべて", tag: "", from: "", to: "" };
-const NOTE_FONT_SIZES = [
-  { label: "小", size: "12px" },
-  { label: "標準", size: "15px" },
-  { label: "大", size: "20px" },
-  { label: "見出し", size: "26px", weight: "800" },
+const NOTE_TEXT_COLORS = [
+  { label: "デフォルト", value: "" },
+  { label: "グレー", value: "#787774" },
+  { label: "茶色", value: "#9F6B53" },
+  { label: "オレンジ", value: "#D9730D" },
+  { label: "黄色", value: "#CB912F" },
+  { label: "緑", value: "#448361" },
+  { label: "青", value: "#337EA9" },
+  { label: "紫", value: "#9065B0" },
+  { label: "ピンク", value: "#C14C8A" },
+  { label: "赤", value: "#D44C47" },
 ];
-const NOTE_COLORS = ["#1A1D26", "#EF4444", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"];
-const NOTE_ALLOWED_TAGS = new Set(["DIV", "BR", "SPAN", "B", "STRONG", "I", "EM", "UL", "OL", "LI", "P"]);
+const NOTE_BG_COLORS = [
+  { label: "なし", value: "" },
+  { label: "グレー", value: "#F1F1EF" },
+  { label: "茶色", value: "#F4EEEE" },
+  { label: "オレンジ", value: "#FAEBDD" },
+  { label: "黄色", value: "#FBF3DB" },
+  { label: "緑", value: "#EDF3EC" },
+  { label: "青", value: "#E7F3F8" },
+  { label: "紫", value: "#F6F3F9" },
+  { label: "ピンク", value: "#FAF1F5" },
+  { label: "赤", value: "#FDEBEC" },
+];
+const NOTE_ALLOWED_TAGS = new Set(["DIV", "BR", "SPAN", "B", "STRONG", "I", "EM", "UL", "OL", "LI", "P", "A"]);
 
 // 選択範囲にインラインstyleを適用（execCommandに頼らず、自前でRangeを包む。ブラウザ間の挙動差を避けるため）
 function applyNoteStyle(styleProps) {
@@ -617,6 +634,25 @@ function applyNoteStyle(styleProps) {
   sel.addRange(newRange);
 }
 
+// 選択範囲をリンク化する（インラインAaパネルの🔗ボタン用）
+function applyInlineLink() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { toast("リンクにする文字を選択してください", "x"); return; }
+  const url = window.prompt("リンク先のURL");
+  if (!url) return;
+  const range = sel.getRangeAt(0);
+  const a = document.createElement("a");
+  a.href = url;
+  try {
+    range.surroundContents(a);
+  } catch {
+    const frag = range.extractContents();
+    a.appendChild(frag);
+    range.insertNode(a);
+  }
+  sel.removeAllRanges();
+}
+
 // 保存前にHTMLをホワイトリストでサニタイズ（許可外タグは中身だけ残して展開、style属性もcolor/font-size/font-weightのみ許可）
 function sanitizeNoteHtml(html) {
   const tmp = document.createElement("div");
@@ -630,11 +666,21 @@ function sanitizeNoteHtml(html) {
           else node.replaceWith(...node.childNodes);
           return;
         }
-        const { color, fontSize, fontWeight } = node.style;
+        const { color, fontSize, fontWeight, fontStyle, textDecoration, fontFamily, backgroundColor } = node.style;
+        const href = node.tagName === "A" ? node.getAttribute("href") : null;
         [...node.attributes].forEach((a) => node.removeAttribute(a.name));
         if (color) node.style.color = color;
         if (fontSize) node.style.fontSize = fontSize;
         if (fontWeight) node.style.fontWeight = fontWeight;
+        if (fontStyle) node.style.fontStyle = fontStyle;
+        if (textDecoration) node.style.textDecoration = textDecoration;
+        if (fontFamily) node.style.fontFamily = fontFamily;
+        if (backgroundColor) node.style.backgroundColor = backgroundColor;
+        if (href && /^(https?:|mailto:)/i.test(href)) {
+          node.setAttribute("href", href);
+          node.setAttribute("target", "_blank");
+          node.setAttribute("rel", "noopener noreferrer");
+        }
       } else if (node.nodeType !== Node.TEXT_NODE) {
         node.remove();
       }
@@ -655,11 +701,50 @@ function stripHtmlPreview(html, maxLen = 100) {
 
 const NOTE_BLOCK_TYPES = [
   { type: "paragraph", label: "テキスト", glyph: "T" },
-  { type: "heading", label: "見出し", glyph: "H" },
+  { type: "heading", level: 1, label: "見出し1", glyph: "H1" },
+  { type: "heading", level: 2, label: "見出し2", glyph: "H2" },
+  { type: "heading", level: 3, label: "見出し3", glyph: "H3" },
   { type: "bulleted", label: "箇条書きリスト", glyph: "•" },
   { type: "numbered", label: "番号付きリスト", glyph: "1." },
-  { type: "checkbox", label: "チェックリスト", glyph: "☑" },
+  { type: "checkbox", label: "ToDoリスト", glyph: "☑" },
+  { type: "toggle", label: "トグルリスト", glyph: "▸" },
+  { type: "quote", label: "引用", glyph: "❝" },
+  { type: "callout", label: "コールアウト", glyph: "💡" },
+  { type: "code", label: "コード", glyph: "<>" },
+  { type: "image", label: "画像", glyph: "🖼" },
   { type: "divider", label: "区切り線", glyph: "—" },
+];
+
+// ツールバー「+」ブロックピッカーシート用のカテゴリ分け（Notion風。【データベース】カテゴリは仕様書の指示により実装しない）
+const NOTE_PICKER_CATEGORIES = [
+  {
+    label: "基本",
+    items: [
+      { type: "paragraph", label: "テキスト", glyph: "T" },
+      { type: "heading", level: 1, label: "見出し1", glyph: "H1" },
+      { type: "heading", level: 2, label: "見出し2", glyph: "H2" },
+      { type: "heading", level: 3, label: "見出し3", glyph: "H3" },
+      { type: "heading", level: 4, label: "見出し4", glyph: "H4" },
+      { type: "bulleted", label: "箇条書きリスト", glyph: "•" },
+      { type: "numbered", label: "番号付きリスト", glyph: "1." },
+      { type: "checkbox", label: "ToDoリスト", glyph: "☑" },
+      { type: "toggle", label: "トグルリスト", glyph: "▸" },
+      { type: "callout", label: "コールアウト", glyph: "💡" },
+      { type: "quote", label: "引用", glyph: "❝" },
+      { type: "divider", label: "区切り線", glyph: "—" },
+    ],
+  },
+  {
+    label: "メディア",
+    items: [
+      { type: "image", label: "画像", icon: "image" },
+      { type: "code", label: "コード", icon: "code" },
+      { type: "soon", label: "動画", icon: "playSquare" },
+      { type: "soon", label: "オーディオ", icon: "volume" },
+      { type: "soon", label: "ファイル&メディア", icon: "paperclip" },
+      { type: "soon", label: "Webブックマーク", icon: "bookmark" },
+    ],
+  },
 ];
 
 // 旧形式(body=フラットHTML / memo=プレーンテキスト)から段落ブロック配列へ移行する
@@ -685,14 +770,56 @@ function noteBlockRowHTML(b) {
       <button type="button" class="icon-btn danger note-block-del" data-block-del>${icon("x", 14)}</button>
     </div>`;
   }
+  if (b.type === "image") {
+    return `<div class="note-block type-image" data-block="${b.id}" data-type="image">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <div class="note-image-wrap">
+        ${b.url
+          ? `<img src="${esc(b.url)}" class="note-image-img" alt="">`
+          : `<div class="note-image-empty">${icon("image", 18)}<input type="url" class="note-image-url" placeholder="画像URLを入力してEnter"></div>`}
+      </div>
+      <button type="button" class="icon-btn danger note-block-del" data-block-del>${icon("x", 14)}</button>
+    </div>`;
+  }
+  if (b.type === "code") {
+    return `<div class="note-block type-code" data-block="${b.id}" data-type="code">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <div class="note-block-text note-code-text" contenteditable="true" data-placeholder="コードを入力">${b.html || ""}</div>
+      <button type="button" class="icon-btn danger note-block-del" data-block-del>${icon("x", 14)}</button>
+    </div>`;
+  }
+  if (b.type === "callout") {
+    return `<div class="note-block type-callout" data-block="${b.id}" data-type="callout">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <button type="button" class="note-callout-emoji" data-callout-emoji>${esc(b.emoji || "💡")}</button>
+      <div class="note-block-text" contenteditable="true" data-placeholder="コールアウト">${b.html || ""}</div>
+    </div>`;
+  }
+  if (b.type === "toggle") {
+    return `<div class="note-block type-toggle${b.open === false ? "" : " open"}" data-block="${b.id}" data-type="toggle">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <button type="button" class="note-toggle-arrow" data-toggle-arrow>${icon("toggle", 14)}</button>
+      <div class="note-toggle-col">
+        <div class="note-block-text note-toggle-summary" contenteditable="true" data-placeholder="トグルリスト">${b.html || ""}</div>
+        <div class="note-block-text note-toggle-body" contenteditable="true" data-placeholder="内容を入力">${b.childHtml || ""}</div>
+      </div>
+    </div>`;
+  }
+  if (b.type === "quote") {
+    return `<div class="note-block type-quote" data-block="${b.id}" data-type="quote">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <div class="note-block-text" contenteditable="true" data-placeholder="引用">${b.html || ""}</div>
+    </div>`;
+  }
   const prefix = b.type === "bulleted" ? `<span class="note-block-bullet">•</span>`
     : b.type === "numbered" ? `<span class="note-block-bullet" data-num></span>`
     : b.type === "checkbox" ? `<input type="checkbox" class="checkbox note-block-check" ${b.checked ? "checked" : ""}>`
     : "";
-  return `<div class="note-block type-${b.type}${b.type === "checkbox" && b.checked ? " checked" : ""}" data-block="${b.id}" data-type="${b.type}">
+  const level = b.type === "heading" ? (b.level || 1) : null;
+  return `<div class="note-block type-${b.type}${level ? " level-" + level : ""}${b.type === "checkbox" && b.checked ? " checked" : ""}" data-block="${b.id}" data-type="${b.type}"${level ? ` data-level="${level}"` : ""}>
     <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
     ${prefix}
-    <div class="note-block-text" contenteditable="true" data-placeholder="${b.type === "heading" ? "見出し" : "入力するか「/」でメニュー"}">${b.html || ""}</div>
+    <div class="note-block-text" contenteditable="true" data-placeholder="${b.type === "heading" ? "見出し" + level : "入力するか「/」でメニュー"}">${b.html || ""}</div>
   </div>`;
 }
 // 番号付きリストの連番を、直前のブロックも番号付きリストである連続区間ごとに振り直す
@@ -743,13 +870,25 @@ function studyNoteEditor(note, subjects) {
         <div id="noteLinks" class="note-links">${linksHTML()}</div>
         <button type="button" class="note-link-add" id="noteLinkAdd">${icon("plus", 12)} リンクを追加</button>
       </div>
-      <div class="note-sheet-toolbar">
-        <div class="seg">${NOTE_FONT_SIZES.map((f) => `<button type="button" data-note-size="${f.size}" data-note-weight="${f.weight || ""}">${esc(f.label)}</button>`).join("")}</div>
-        <div class="color-grid" style="margin:0">${NOTE_COLORS.map((c) => `<button type="button" class="color-swatch" style="background:${c}" data-note-color="${c}"></button>`).join("")}</div>
+      <div class="note-toolbar-outer" id="noteToolbarOuter">
+        <div class="note-toolbar" id="noteToolbar"></div>
+        <div class="note-bottom-area" id="noteBottomArea"></div>
       </div>
     </div>`;
     document.body.classList.add("modal-open");
-    const close = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
+    const toolbarOuter = $("#noteToolbarOuter", wrap);
+    const toolbarEl = $("#noteToolbar", wrap);
+    const bottomArea = $("#noteBottomArea", wrap);
+    let vvResizeHandler = null;
+    const close = (result) => {
+      if (vvResizeHandler && window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", vvResizeHandler);
+        window.visualViewport.removeEventListener("scroll", vvResizeHandler);
+      }
+      wrap.innerHTML = "";
+      document.body.classList.remove("modal-open");
+      resolve(result);
+    };
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
     renumberNoteBlocks($("#noteBlocks", wrap));
 
@@ -768,6 +907,7 @@ function studyNoteEditor(note, subjects) {
     // ===== ブロック編集 =====
     const blocksEl = $("#noteBlocks", wrap);
     let slashMenu = null;
+    let activeRow = null;
     const closeSlashMenu = () => { slashMenu?.remove(); slashMenu = null; };
 
     const focusTextEl = (row, atStart = false) => {
@@ -782,12 +922,13 @@ function studyNoteEditor(note, subjects) {
       sel.addRange(r);
     };
 
-    const insertBlockAfter = (row, type = "paragraph", html = "") => {
-      const b = { id: uid(), type, html };
+    const insertBlockAfter = (row, type = "paragraph", html = "", extra = {}) => {
+      const b = { id: uid(), type, html, ...extra };
       row.insertAdjacentHTML("afterend", noteBlockRowHTML(b));
       const newRow = row.nextElementSibling;
       bindBlockRow(newRow);
       renumberNoteBlocks(blocksEl);
+      pushHistory();
       return newRow;
     };
     const removeBlock = (row) => {
@@ -795,22 +936,25 @@ function studyNoteEditor(note, subjects) {
       row.remove();
       renumberNoteBlocks(blocksEl);
       if (prev) focusTextEl(prev, false);
+      pushHistory();
     };
-    const convertBlockType = (row, newType) => {
-      const b = { id: row.dataset.block, type: newType, html: "", checked: false };
+    const convertBlockType = (row, newType, extra = {}) => {
+      const b = { id: row.dataset.block, type: newType, html: "", checked: false, emoji: "💡", open: true, childHtml: "", url: "", ...extra };
       row.outerHTML = noteBlockRowHTML(b);
       const newRow = $(`[data-block="${b.id}"]`, blocksEl);
       bindBlockRow(newRow);
       renumberNoteBlocks(blocksEl);
-      if (newType !== "divider") focusTextEl(newRow);
-      else insertBlockAfter(newRow) && focusTextEl(newRow.nextElementSibling);
+      pushHistory();
+      if (newType === "divider") { insertBlockAfter(newRow); focusTextEl(newRow.nextElementSibling); }
+      else if (newType === "image") { $(".note-image-url", newRow)?.focus(); }
+      else focusTextEl(newRow);
     };
 
     const openSlashMenu = (row, textEl) => {
       closeSlashMenu();
       slashMenu = document.createElement("div");
       slashMenu.className = "note-slash-menu";
-      slashMenu.innerHTML = NOTE_BLOCK_TYPES.map((t, i) => `<button type="button" class="note-slash-item${i === 0 ? " active" : ""}" data-slash-type="${t.type}"><span class="note-slash-glyph">${t.glyph}</span>${t.label}</button>`).join("");
+      slashMenu.innerHTML = NOTE_BLOCK_TYPES.map((t, i) => `<button type="button" class="note-slash-item${i === 0 ? " active" : ""}" data-slash-type="${t.type}" data-slash-level="${t.level || ""}"><span class="note-slash-glyph">${t.glyph}</span>${t.label}</button>`).join("");
       row.style.position = "relative";
       row.appendChild(slashMenu);
       slashMenu.style.top = row.offsetHeight + "px";
@@ -819,7 +963,7 @@ function studyNoteEditor(note, subjects) {
         e.preventDefault();
         textEl.textContent = "";
         closeSlashMenu();
-        convertBlockType(row, b.dataset.slashType);
+        convertBlockType(row, b.dataset.slashType, b.dataset.slashLevel ? { level: Number(b.dataset.slashLevel) } : {});
       }));
     };
 
@@ -841,16 +985,84 @@ function studyNoteEditor(note, subjects) {
         renumberNoteBlocks(blocksEl);
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
+        pushHistory();
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
     };
 
+    const CALLOUT_EMOJIS = ["💡", "📌", "⚠️", "✅", "📝"];
+    const cycleCalloutEmoji = (row, btn) => {
+      const i = CALLOUT_EMOJIS.indexOf(btn.textContent.trim());
+      btn.textContent = CALLOUT_EMOJIS[(i + 1) % CALLOUT_EMOJIS.length];
+      pushHistory();
+    };
+
+    let historyTimer = null;
+    const scheduleHistoryPush = () => { clearTimeout(historyTimer); historyTimer = setTimeout(() => pushHistory(), 800); };
+
+    function bindImageBlock(row) {
+      const urlInput = $(".note-image-url", row);
+      if (urlInput) {
+        urlInput.addEventListener("focus", () => { activeRow = row; });
+        const commit = () => {
+          const url = urlInput.value.trim();
+          if (!url) return;
+          const b = { id: row.dataset.block, type: "image", url };
+          row.outerHTML = noteBlockRowHTML(b);
+          const newRow = $(`[data-block="${b.id}"]`, blocksEl);
+          bindBlockRow(newRow);
+          pushHistory();
+        };
+        urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+        urlInput.addEventListener("blur", commit);
+      }
+      const delBtn = $("[data-block-del]", row);
+      if (delBtn) delBtn.addEventListener("click", () => removeBlock(row));
+      const handle = $("[data-drag]", row);
+      if (handle) handle.addEventListener("pointerdown", (e) => { e.preventDefault(); startDrag(row); });
+    }
+
+    function bindToggleBlock(row) {
+      const summary = $(".note-toggle-summary", row);
+      const body = $(".note-toggle-body", row);
+      const arrow = $("[data-toggle-arrow]", row);
+      arrow.addEventListener("click", () => row.classList.toggle("open"));
+      [summary, body].forEach((el) => el.addEventListener("focus", () => { activeRow = row; }));
+      summary.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.isComposing || e.keyCode === 229)) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          closeSlashMenu();
+          const newRow = insertBlockAfter(row, "paragraph");
+          focusTextEl(newRow, true);
+        } else if (e.key === "Backspace") {
+          if (!summary.textContent.trim() && $$(".note-block", blocksEl).length > 1) { e.preventDefault(); removeBlock(row); }
+        }
+      });
+      summary.addEventListener("input", () => {
+        if (summary.textContent === "/") openSlashMenu(row, summary);
+        else closeSlashMenu();
+        scheduleHistoryPush();
+      });
+      summary.addEventListener("blur", () => setTimeout(closeSlashMenu, 150));
+      body.addEventListener("input", scheduleHistoryPush);
+      const handle = $("[data-drag]", row);
+      if (handle) handle.addEventListener("pointerdown", (e) => { e.preventDefault(); startDrag(row); });
+    }
+
     function bindBlockRow(row) {
+      const type = row.dataset.type;
+      if (type === "image") { bindImageBlock(row); return; }
+      if (type === "toggle") { bindToggleBlock(row); return; }
       const textEl = $(".note-block-text", row);
       if (textEl) {
+        textEl.addEventListener("focus", () => { activeRow = row; });
         textEl.addEventListener("keydown", (e) => {
+          // 日本語IMEの変換確定Enterと誤認しないようにする（isComposing/keyCode 229は変換中の合図）
+          if (e.key === "Enter" && (e.isComposing || e.keyCode === 229)) return;
           if (e.key === "Enter") {
+            if (type === "code") return; // コードブロック内は改行を許可（ブロック分割しない）
             e.preventDefault();
             closeSlashMenu();
             // カーソル位置で分割: 後半をextractして新しいブロックへ
@@ -866,12 +1078,12 @@ function studyNoteEditor(note, subjects) {
               div.appendChild(frag);
               afterHtml = sanitizeNoteHtml(div.innerHTML);
             }
-            if (!textEl.textContent.trim() && row.dataset.type !== "paragraph") {
-              // 空のリスト/見出しでEnter: 段落に変換して抜ける（Notionの挙動に合わせる）
+            if (!textEl.textContent.trim() && !["paragraph", "quote"].includes(type)) {
+              // 空のリスト/見出し/特殊ブロックでEnter: 段落に変換して抜ける（Notionの挙動に合わせる）
               convertBlockType(row, "paragraph");
               return;
             }
-            const nextType = ["bulleted", "numbered", "checkbox"].includes(row.dataset.type) ? row.dataset.type : "paragraph";
+            const nextType = ["bulleted", "numbered", "checkbox", "quote"].includes(type) ? type : "paragraph";
             const newRow = insertBlockAfter(row, nextType, afterHtml);
             focusTextEl(newRow, true);
           } else if (e.key === "Backspace") {
@@ -887,27 +1099,220 @@ function studyNoteEditor(note, subjects) {
         textEl.addEventListener("input", () => {
           if (textEl.textContent === "/") openSlashMenu(row, textEl);
           else closeSlashMenu();
+          scheduleHistoryPush();
         });
         textEl.addEventListener("blur", () => setTimeout(closeSlashMenu, 150));
       }
       const check = $(".note-block-check", row);
-      if (check) check.addEventListener("change", () => row.classList.toggle("checked", check.checked));
+      if (check) check.addEventListener("change", () => { row.classList.toggle("checked", check.checked); pushHistory(); });
       const delBtn = $("[data-block-del]", row);
       if (delBtn) delBtn.addEventListener("click", () => removeBlock(row));
       const handle = $("[data-drag]", row);
       if (handle) handle.addEventListener("pointerdown", (e) => { e.preventDefault(); startDrag(row); });
+      const emojiBtn = $("[data-callout-emoji]", row);
+      if (emojiBtn) emojiBtn.addEventListener("click", () => cycleCalloutEmoji(row, emojiBtn));
     }
     $$(".note-block", blocksEl).forEach(bindBlockRow);
 
-    // ツールバー: mousedownでpreventDefaultし、本文のフォーカス/選択範囲を失わせない
-    $$("[data-note-size]", wrap).forEach((b) => b.addEventListener("mousedown", (e) => {
+    // ===== Undo履歴（ブロック構造のスナップショット方式） =====
+    let history = [blocksEl.innerHTML];
+    let histIndex = 0;
+    function pushHistory() {
+      const html = blocksEl.innerHTML;
+      if (html === history[histIndex]) return;
+      history = history.slice(0, histIndex + 1);
+      history.push(html);
+      histIndex = history.length - 1;
+      if (history.length > 50) { history.shift(); histIndex--; }
+      const undoBtn = $("#noteTbUndo", wrap);
+      if (undoBtn) undoBtn.disabled = histIndex <= 0;
+    }
+    function doUndo() {
+      if (histIndex <= 0) return;
+      histIndex--;
+      blocksEl.innerHTML = history[histIndex];
+      $$(".note-block", blocksEl).forEach(bindBlockRow);
+      renumberNoteBlocks(blocksEl);
+      activeRow = null;
+      const undoBtn = $("#noteTbUndo", wrap);
+      if (undoBtn) undoBtn.disabled = histIndex <= 0;
+    }
+
+    // ===== キーボード追従ツールバー（Notion風ピル型） =====
+    let toolbarMode = "keyboard"; // keyboard | picker | aa | color
+    let pickerMode = "insert"; // insert | turnInto
+    let colorPanelKind = "text"; // text | bg
+    let lastKeyboardHeight = 0;
+
+    const blurActive = () => { document.activeElement?.blur?.(); };
+    const refocusActive = () => {
+      if (!activeRow || !document.body.contains(activeRow)) return;
+      const t = activeRow.dataset.type === "toggle" ? $(".note-toggle-summary", activeRow) : $(".note-block-text", activeRow);
+      t?.focus();
+    };
+    const lastBlockRow = () => blocksEl.lastElementChild;
+
+    const mainRowHTML = () => `
+      <button type="button" class="note-tb-btn" data-tb="pen" disabled title="近日対応">${icon("edit", 18)}</button>
+      <button type="button" class="note-tb-btn${toolbarMode === "picker" && pickerMode === "insert" ? " active" : ""}" data-tb="plus">${icon("plus", 18)}</button>
+      <button type="button" class="note-tb-btn${toolbarMode === "aa" || toolbarMode === "color" ? " active" : ""}" data-tb="aa">Aa</button>
+      <button type="button" class="note-tb-btn" data-tb="mic" disabled title="近日対応">${icon("mic", 18)}</button>
+      <button type="button" class="note-tb-btn" data-tb="image" title="画像を挿入">${icon("image", 18)}</button>
+      <button type="button" class="note-tb-btn${toolbarMode === "picker" && pickerMode === "turnInto" ? " active" : ""}" data-tb="swap" title="ブロックの種類を変換">${icon("swap", 18)}</button>
+      <button type="button" class="note-tb-btn" data-tb="undo" id="noteTbUndo" ${histIndex <= 0 ? "disabled" : ""}>${icon("rotate", 18)}</button>
+      <button type="button" class="note-tb-btn" data-tb="smile" disabled title="近日対応">${icon("smile", 18)}</button>
+      <span class="note-tb-sep"></span>
+      <button type="button" class="note-tb-btn" data-tb="close">${toolbarMode === "keyboard" ? icon("keyboardIc", 18) : icon("x", 18)}</button>
+    `;
+    const aaRowHTML = () => `
+      <button type="button" class="note-tb-btn" data-aa="${toolbarMode === "color" ? "back" : "color"}">${toolbarMode === "color" ? icon("chevR", 16, "rot180") : `<span class="note-aa-glyph">あ</span>`}</button>
+      <button type="button" class="note-tb-btn" data-aa="bold"><b>B</b></button>
+      <button type="button" class="note-tb-btn" data-aa="italic"><i>I</i></button>
+      <button type="button" class="note-tb-btn" data-aa="underline" style="text-decoration:underline">U</button>
+      <button type="button" class="note-tb-btn" data-aa="strike" style="text-decoration:line-through">S</button>
+      <button type="button" class="note-tb-btn" data-aa="link">${icon("link", 16)}</button>
+      <button type="button" class="note-tb-btn" data-aa="code">${icon("code", 16)}</button>
+    `;
+    const pickerItemHTML = (it) => `
+      <button type="button" class="note-picker-item" data-picker-type="${it.type}" data-picker-level="${it.level || ""}">
+        <span class="note-picker-icon">${it.icon ? icon(it.icon, 20) : `<span class="note-picker-glyph">${esc(it.glyph)}</span>`}</span>
+        <span>${esc(it.label)}</span>
+      </button>`;
+    const pickerHTML = () => {
+      const cats = pickerMode === "turnInto" ? [NOTE_PICKER_CATEGORIES[0]] : NOTE_PICKER_CATEGORIES;
+      return cats.map((cat) => `
+        <div class="note-picker-cat-label">${esc(cat.label)}</div>
+        <div class="note-picker-grid">${cat.items.map(pickerItemHTML).join("")}</div>`).join("");
+    };
+    const colorPanelHTML = () => {
+      const colors = colorPanelKind === "bg" ? NOTE_BG_COLORS : NOTE_TEXT_COLORS;
+      return `
+        <div class="note-color-tabs">
+          <button type="button" class="note-color-tab${colorPanelKind === "text" ? " active" : ""}" data-color-kind="text">テキストの色</button>
+          <button type="button" class="note-color-tab${colorPanelKind === "bg" ? " active" : ""}" data-color-kind="bg">背景色</button>
+        </div>
+        <div class="note-picker-grid">${colors.map((c) => `
+          <button type="button" class="note-picker-item" data-color-value="${esc(c.value)}">
+            <span class="note-picker-icon">${colorPanelKind === "bg"
+              ? `<span class="note-color-swatch" style="background:${c.value || "transparent"}"></span>`
+              : `<span class="note-color-swatch-text" style="color:${c.value || "var(--ink)"}">あ</span>`}</span>
+            <span>${esc(c.label)}</span>
+          </button>`).join("")}</div>`;
+    };
+
+    function updateToolbarPosition() {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const kh = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      if (kh > 40) lastKeyboardHeight = kh;
+      const showBottom = toolbarMode !== "keyboard";
+      const used = showBottom ? (kh > 40 ? kh : (lastKeyboardHeight || 260)) : kh;
+      toolbarOuter.style.transform = `translateY(-${used}px)`;
+    }
+    vvResizeHandler = () => updateToolbarPosition();
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", vvResizeHandler);
+      window.visualViewport.addEventListener("scroll", vvResizeHandler);
+    }
+
+    function setToolbarMode(mode) {
+      toolbarMode = mode;
+      toolbarEl.innerHTML = (mode === "aa" || mode === "color") ? aaRowHTML() : mainRowHTML();
+      if (mode === "picker") {
+        bottomArea.innerHTML = pickerHTML();
+        bottomArea.classList.add("open");
+      } else if (mode === "color") {
+        bottomArea.innerHTML = colorPanelHTML();
+        bottomArea.classList.add("open");
+      } else {
+        bottomArea.innerHTML = "";
+        bottomArea.classList.remove("open");
+      }
+      updateToolbarPosition();
+    }
+    setToolbarMode("keyboard");
+
+    function handlePickerChoice(btn) {
+      const type = btn.dataset.pickerType;
+      const level = btn.dataset.pickerLevel ? Number(btn.dataset.pickerLevel) : undefined;
+      if (type === "soon") { toast("この機能は近日対応予定です", "clock"); return; }
+      const extra = level ? { level } : {};
+      const target = activeRow || lastBlockRow();
+      if (pickerMode === "turnInto") {
+        if (target) convertBlockType(target, type, extra);
+      } else {
+        const newRow = insertBlockAfter(target, type, "", extra);
+        activeRow = newRow;
+        if (type === "image") $(".note-image-url", newRow)?.focus();
+        else focusTextEl(newRow, true);
+      }
+      setToolbarMode("keyboard");
+    }
+
+    toolbarEl.addEventListener("mousedown", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn || btn.disabled) return;
       e.preventDefault();
-      applyNoteStyle({ fontSize: b.dataset.noteSize, fontWeight: b.dataset.noteWeight || "normal" });
-    }));
-    $$("[data-note-color]", wrap).forEach((b) => b.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      applyNoteStyle({ color: b.dataset.noteColor });
-    }));
+      const tb = btn.dataset.tb;
+      const aa = btn.dataset.aa;
+      if (tb === "plus") {
+        const wasInsertOpen = toolbarMode === "picker" && pickerMode === "insert";
+        pickerMode = "insert";
+        if (wasInsertOpen) { setToolbarMode("keyboard"); refocusActive(); }
+        else { blurActive(); setToolbarMode("picker"); }
+      } else if (tb === "aa") {
+        if (toolbarMode === "aa" || toolbarMode === "color") setToolbarMode("keyboard");
+        else setToolbarMode("aa");
+      } else if (tb === "image") {
+        const target = activeRow || lastBlockRow();
+        const newRow = insertBlockAfter(target, "image");
+        activeRow = newRow;
+        $(".note-image-url", newRow)?.focus();
+      } else if (tb === "swap") {
+        const wasTurnIntoOpen = toolbarMode === "picker" && pickerMode === "turnInto";
+        pickerMode = "turnInto";
+        if (wasTurnIntoOpen) { setToolbarMode("keyboard"); refocusActive(); }
+        else setToolbarMode("picker");
+      } else if (tb === "undo") {
+        doUndo();
+      } else if (tb === "close") {
+        if (toolbarMode !== "keyboard") { setToolbarMode("keyboard"); refocusActive(); }
+        else blurActive();
+      } else if (aa === "color") {
+        setToolbarMode("color");
+      } else if (aa === "back") {
+        setToolbarMode("aa");
+      } else if (aa === "bold") {
+        applyNoteStyle({ fontWeight: "700" });
+      } else if (aa === "italic") {
+        applyNoteStyle({ fontStyle: "italic" });
+      } else if (aa === "underline") {
+        applyNoteStyle({ textDecoration: "underline" });
+      } else if (aa === "strike") {
+        applyNoteStyle({ textDecoration: "line-through" });
+      } else if (aa === "link") {
+        applyInlineLink();
+      } else if (aa === "code") {
+        applyNoteStyle({ fontFamily: "monospace", backgroundColor: "var(--surface-2)" });
+      }
+    });
+
+    bottomArea.addEventListener("mousedown", (e) => {
+      const tabBtn = e.target.closest("[data-color-kind]");
+      if (tabBtn) { e.preventDefault(); colorPanelKind = tabBtn.dataset.colorKind; setToolbarMode("color"); return; }
+      const colorBtn = e.target.closest("[data-color-value]");
+      if (colorBtn) {
+        e.preventDefault();
+        const v = colorBtn.dataset.colorValue;
+        if (colorPanelKind === "bg") applyNoteStyle({ backgroundColor: v || "transparent" });
+        else applyNoteStyle({ color: v || "" });
+        setToolbarMode("keyboard");
+        refocusActive();
+        return;
+      }
+      const pickerBtn = e.target.closest("[data-picker-type]");
+      if (pickerBtn) { e.preventDefault(); handlePickerChoice(pickerBtn); }
+    });
 
     if (isEdit) {
       $("[data-del]", wrap).addEventListener("click", async () => {
@@ -920,15 +1325,33 @@ function studyNoteEditor(note, subjects) {
       const blocks = $$(".note-block", blocksEl).map((row) => {
         const type = row.dataset.type;
         if (type === "divider") return { id: row.dataset.block, type, html: "" };
+        if (type === "image") {
+          const img = $(".note-image-img", row);
+          return { id: row.dataset.block, type, url: img ? img.getAttribute("src") : "" };
+        }
+        if (type === "toggle") {
+          const summary = $(".note-toggle-summary", row);
+          const body = $(".note-toggle-body", row);
+          return {
+            id: row.dataset.block, type,
+            html: sanitizeNoteHtml(summary.innerHTML),
+            childHtml: sanitizeNoteHtml(body.innerHTML),
+            open: row.classList.contains("open"),
+          };
+        }
         const textEl = $(".note-block-text", row);
         const html = sanitizeNoteHtml(textEl.innerHTML);
         const out = { id: row.dataset.block, type, html };
         if (type === "checkbox") out.checked = $(".note-block-check", row)?.checked || false;
+        if (type === "heading") out.level = Number(row.dataset.level) || 1;
+        if (type === "callout") out.emoji = $("[data-callout-emoji]", row)?.textContent.trim() || "💡";
         return out;
-      }).filter((b) => b.type === "divider" || stripHtmlPreview(b.html, 1));
+      }).filter((b) => b.type === "divider" || b.type === "image" || stripHtmlPreview(b.html, 1) || (b.type === "toggle" && stripHtmlPreview(b.childHtml, 1)));
       const bodyHtml = blocks.map((b) => {
         if (b.type === "divider") return "<div>ーーーーー</div>";
-        const prefix = b.type === "bulleted" ? "• " : b.type === "checkbox" ? (b.checked ? "☑ " : "☐ ") : "";
+        if (b.type === "image") return b.url ? `<div>🖼 ${esc(b.url)}</div>` : "";
+        if (b.type === "toggle") return `<div>▸ ${b.html}</div><div>${b.childHtml}</div>`;
+        const prefix = b.type === "bulleted" ? "• " : b.type === "checkbox" ? (b.checked ? "☑ " : "☐ ") : b.type === "quote" ? "❝ " : b.type === "callout" ? `${b.emoji} ` : "";
         return `<div>${prefix}${b.html}</div>`;
       }).join("");
       const bodyText = stripHtmlPreview(bodyHtml, 1);
