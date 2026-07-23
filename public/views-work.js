@@ -1755,8 +1755,11 @@ function calRenderMonth(el) {
     const hasMit = day ? day.tasks.some((t) => t.important) : false;
     const hasIcal = !!(CAL._ical?.[iso]?.length);
     const lv = calLevel(calXp(iso));
-    const cls = ["cal-cell", d.getMonth() !== anchorMonth ? "other" : "", iso === today ? "today" : ""].join(" ");
-    cells += `<button class="${cls}" data-day="${iso}">
+    const dow = d.getDay();
+    const holidayName = jpHolidayName(iso);
+    const isHoliday = holidayName && dow !== 0 && dow !== 6;
+    const cls = ["cal-cell", d.getMonth() !== anchorMonth ? "other" : "", iso === today ? "today" : "", isHoliday ? "holiday" : ""].join(" ");
+    cells += `<button class="${cls}" data-day="${iso}" ${holidayName ? `title="${esc(holidayName)}"` : ""}>
       <span class="cc-num">${d.getDate()}</span>
       ${hasMit ? `<span class="cc-star">${icon("star", 11, "filled")}</span>` : ""}
       ${hasIcal ? `<span class="cc-star" style="top:4px;right:${hasMit ? "20px" : "5px"};color:var(--violet)">${icon("calendar", 11)}</span>` : ""}
@@ -1789,6 +1792,9 @@ function calRenderTime(el, from, to) {
     const timed = tasks.filter(isTimed), allday = tasks.filter((t) => !isTimed(t));
     const icalDay = CAL._ical?.[iso] || [];
     const icalTimed = icalDay.filter((e) => !e.allDay), icalAllday = icalDay.filter((e) => e.allDay);
+    const dow = d.getDay();
+    const holidayName = jpHolidayName(iso);
+    const isHoliday = holidayName && dow !== 0 && dow !== 6;
     const blocks = timed.map((t) => {
       const [hh, mm] = t.time.split(":").map(Number);
       const top = Math.max(0, (hh - H0 + mm / 60) * rowH);
@@ -1802,7 +1808,7 @@ function calRenderTime(el, from, to) {
       return `<div class="cal-ev ical-ev" style="top:${top}px;border-left-color:var(--violet)"><b>${esc(t.toTimeString().slice(0, 5))}</b>${icon("calendar", 10)} ${esc(e.title)}</div>`;
     }).join("");
     return `<div class="cal-col">
-      <div class="cal-colhead ${iso === today ? "today" : ""}">${WD_JP[d.getDay()]}<b>${d.getDate()}</b></div>
+      <div class="cal-colhead ${iso === today ? "today" : ""}" ${holidayName ? `title="${esc(holidayName)}"` : ""}>${WD_JP[d.getDay()]}<b style="${isHoliday ? "color:var(--red)" : ""}">${d.getDate()}</b></div>
       <div class="cal-allday">${allday.map((t) => `<button class="cal-chip ${t.done ? "done" : ""}" data-ev="${iso}">${esc(t.title)}</button>`).join("")}${icalAllday.map((e) => `<span class="cal-chip ical-ev">${icon("calendar", 10)} ${esc(e.title)}</span>`).join("")}</div>
       <div class="cal-colbody" style="height:${bodyH}px">
         ${hours.map((h, i) => `<div class="cal-hline" style="top:${i * rowH}px"></div>`).join("")}

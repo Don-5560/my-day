@@ -774,7 +774,7 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 #moneyCalGrid .cal-cell .cc-num { color: var(--ink); }
 #moneyCalGrid .cal-cell:nth-child(7n+1) .cc-num { color: var(--red); }
 #moneyCalGrid .cal-cell:nth-child(7n) .cc-num { color: var(--accent); }
-.money-cell.holiday .cc-num { color: var(--red); }
+.cal-cell.holiday .cc-num { color: var(--red); }
 .money-cell .mc-inc, .money-cell .mc-exp {
   font-size: 9px; font-weight: 700; line-height: 1.15; letter-spacing: -.2px;
   max-width: 100%; overflow-wrap: anywhere;
