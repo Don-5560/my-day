@@ -299,6 +299,34 @@ function bestStreakVal() {
   return best;
 }
 
+// ホーム冒頭の挨拶タップで今日/今月の目標をその場で編集（設定ページの奥に埋もれて使われていなかったため導線を追加）
+function goalQuickModal() {
+  return new Promise((resolve) => {
+    const wrap = $("#modalWrap");
+    wrap.innerHTML = `<div class="overlay"><div class="modal">
+      <div class="modal-head"><h3>目標を設定</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <label class="f-label">今日の目標</label>
+      <input type="text" id="gqToday" value="${esc(DB.settings.todayGoal || "")}" placeholder="例: LP制作を2時間">
+      <label class="f-label">今月の目標</label>
+      <input type="text" id="gqMonth" value="${esc(DB.settings.monthGoal || "")}" placeholder="例: 初案件を獲得">
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" data-x>キャンセル</button>
+        <button type="button" class="btn" id="gqSave">${icon("checkline", 14)} 保存</button>
+      </div>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+    const close = (v) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(v); };
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(false); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(false)));
+    $("#gqSave", wrap).addEventListener("click", async () => {
+      DB.settings.todayGoal = $("#gqToday", wrap).value.trim();
+      DB.settings.monthGoal = $("#gqMonth", wrap).value.trim();
+      await saveDb("settings");
+      close(true);
+    });
+  });
+}
+
 VIEWS.home = {
   title: "ホーム", icon: "home",
   render(main) {
@@ -322,10 +350,11 @@ VIEWS.home = {
             <span id="clock" class="gn-time">${new Date().toTimeString().slice(0, 8)}</span>
           </div>
         </div>
-        <div class="greet-sub" style="flex-wrap:wrap">
-          <p>${esc(S.todayGoal) || "今日も最高の1日にしよう。"}</p>
+        <button type="button" class="greet-sub greet-goal" id="goalQuick" style="flex-wrap:wrap">
+          <p>${esc(S.todayGoal) || "今日の目標を設定する"}</p>
           ${S.monthGoal ? `<p>${icon("target", 12)} 今月: ${esc(S.monthGoal)}</p>` : ""}
-        </div>
+          ${icon("edit", 12, "greet-goal-edit")}
+        </button>
       </div>
 
       ${dueRem.length ? `
@@ -557,6 +586,7 @@ VIEWS.home = {
     });
 
     $("#logActivity").addEventListener("click", logActivity);
+    $("#goalQuick").addEventListener("click", async () => { if (await goalQuickModal()) rerender(); });
     $$("[data-go]", main).forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
     $$("[data-remdone]").forEach((cb) => cb.addEventListener("change", async () => {
       const r = DB.reminders.items.find((x) => x.id === cb.dataset.remdone);
@@ -839,17 +869,8 @@ function studyNoteEditor(note, subjects) {
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
     const isEdit = !!note.id;
-    let links = note.links?.length ? [...note.links] : (note.link ? [note.link] : [""]);
-    if (!links.length) links = [""];
     const subjOptions = note.subject && !subjects.includes(note.subject) ? [note.subject, ...subjects] : subjects;
     const initialBlocks = migrateNoteToBlocks(note);
-
-    const linksHTML = () => links.map((v, i) => `
-      <div class="note-link-row">
-        ${icon("external", 13)}
-        <input type="url" data-link-input="${i}" value="${esc(v)}" placeholder="https://…">
-        <button type="button" class="icon-btn danger" data-link-del="${i}">${icon("x", 14)}</button>
-      </div>`).join("");
 
     wrap.innerHTML = `<div class="note-sheet">
       <div class="note-sheet-top">
@@ -867,8 +888,6 @@ function studyNoteEditor(note, subjects) {
           <input type="text" id="noteTags" value="${esc((note.tags || []).join(", "))}" placeholder="#タグ（カンマ区切り）" style="flex:1;min-width:120px">
         </div>
         <div id="noteBlocks" class="note-blocks">${initialBlocks.map(noteBlockRowHTML).join("")}</div>
-        <div id="noteLinks" class="note-links">${linksHTML()}</div>
-        <button type="button" class="note-link-add" id="noteLinkAdd">${icon("plus", 12)} リンクを追加</button>
       </div>
       <div class="note-toolbar-outer" id="noteToolbarOuter">
         <div class="note-toolbar" id="noteToolbar"></div>
@@ -891,18 +910,6 @@ function studyNoteEditor(note, subjects) {
     };
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
     renumberNoteBlocks($("#noteBlocks", wrap));
-
-    const refreshLinks = () => { $("#noteLinks", wrap).innerHTML = linksHTML(); bindLinkRows(); };
-    const bindLinkRows = () => {
-      $$("[data-link-input]", wrap).forEach((inp) => inp.addEventListener("input", () => { links[Number(inp.dataset.linkInput)] = inp.value; }));
-      $$("[data-link-del]", wrap).forEach((b) => b.addEventListener("click", () => {
-        links.splice(Number(b.dataset.linkDel), 1);
-        if (!links.length) links = [""];
-        refreshLinks();
-      }));
-    };
-    bindLinkRows();
-    $("#noteLinkAdd", wrap).addEventListener("click", () => { links.push(""); refreshLinks(); });
 
     // ===== ブロック編集 =====
     const blocksEl = $("#noteBlocks", wrap);
@@ -1165,13 +1172,16 @@ function studyNoteEditor(note, subjects) {
       <button type="button" class="note-tb-btn" data-tb="close">${toolbarMode === "keyboard" ? icon("keyboardIc", 18) : icon("x", 18)}</button>
     `;
     const aaRowHTML = () => `
-      <button type="button" class="note-tb-btn" data-aa="${toolbarMode === "color" ? "back" : "color"}">${toolbarMode === "color" ? icon("chevR", 16, "rot180") : `<span class="note-aa-glyph">あ</span>`}</button>
+      <button type="button" class="note-tb-btn" data-aa="back" title="戻る">${icon("chevR", 18, "rot180")}</button>
+      <button type="button" class="note-tb-btn${toolbarMode === "color" ? " active" : ""}" data-aa="color"><span class="note-aa-glyph">あ</span></button>
       <button type="button" class="note-tb-btn" data-aa="bold"><b>B</b></button>
       <button type="button" class="note-tb-btn" data-aa="italic"><i>I</i></button>
       <button type="button" class="note-tb-btn" data-aa="underline" style="text-decoration:underline">U</button>
       <button type="button" class="note-tb-btn" data-aa="strike" style="text-decoration:line-through">S</button>
       <button type="button" class="note-tb-btn" data-aa="link">${icon("link", 16)}</button>
       <button type="button" class="note-tb-btn" data-aa="code">${icon("code", 16)}</button>
+      <span class="note-tb-sep"></span>
+      <button type="button" class="note-tb-btn" data-tb="close">${icon("x", 18)}</button>
     `;
     const pickerItemHTML = (it) => `
       <button type="button" class="note-picker-item" data-picker-type="${it.type}" data-picker-level="${it.level || ""}">
@@ -1207,7 +1217,8 @@ function studyNoteEditor(note, subjects) {
       if (kh > 40) lastKeyboardHeight = kh;
       const showBottom = toolbarMode !== "keyboard";
       const used = showBottom ? (kh > 40 ? kh : (lastKeyboardHeight || 260)) : kh;
-      toolbarOuter.style.transform = `translateY(-${used}px)`;
+      const outerH = toolbarOuter.offsetHeight || 60;
+      toolbarOuter.style.top = Math.max(0, window.innerHeight - used - outerH) + "px";
     }
     vvResizeHandler = () => updateToolbarPosition();
     if (window.visualViewport) {
@@ -1272,16 +1283,18 @@ function studyNoteEditor(note, subjects) {
         const wasTurnIntoOpen = toolbarMode === "picker" && pickerMode === "turnInto";
         pickerMode = "turnInto";
         if (wasTurnIntoOpen) { setToolbarMode("keyboard"); refocusActive(); }
-        else setToolbarMode("picker");
+        else { blurActive(); setToolbarMode("picker"); }
       } else if (tb === "undo") {
         doUndo();
       } else if (tb === "close") {
         if (toolbarMode !== "keyboard") { setToolbarMode("keyboard"); refocusActive(); }
         else blurActive();
       } else if (aa === "color") {
+        blurActive();
         setToolbarMode("color");
       } else if (aa === "back") {
-        setToolbarMode("aa");
+        if (toolbarMode === "color") { setToolbarMode("aa"); refocusActive(); }
+        else { setToolbarMode("keyboard"); refocusActive(); }
       } else if (aa === "bold") {
         applyNoteStyle({ fontWeight: "700" });
       } else if (aa === "italic") {
@@ -1362,7 +1375,7 @@ function studyNoteEditor(note, subjects) {
         subject: $("#noteSubject", wrap).value,
         min,
         tags: $("#noteTags", wrap).value.split(/[,、]/).map((s) => s.trim()).filter(Boolean),
-        links: links.map((s) => s.trim()).filter(Boolean),
+        links: note.links || (note.link ? [note.link] : []),
         body: bodyHtml,
         blocks,
       });
