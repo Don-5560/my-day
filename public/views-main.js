@@ -5,7 +5,7 @@ window.VIEWS = window.VIEWS || {};
 
 const NAV_GROUPS = [
   { label: "メイン", items: ["home", "todo", "time", "reminders", "report", "habits"] },
-  { label: "ワーク", items: ["projects", "outreach", "sales", "money", "portfolio", "learning"] },
+  { label: "ワーク", items: ["projects", "outreach", "sales", "money", "portfolio", "learning", "notes"] },
   { label: "グロース", items: ["goals", "badges", "analytics", "calendar"] },
   { label: "", items: ["settings"] },
 ];
@@ -13,7 +13,7 @@ const BOTTOM_NAV = ["calendar", "todo", "home", "money", "menu"];
 // 右ドロワーの構成（モバイルの「メニュー」から開く）
 const DRAWER_GROUPS = [
   { label: "仕事", items: [["projects", "案件"], ["outreach", "営業"], ["money", "収支"], ["sales", "売上明細"], ["portfolio", "ポートフォリオ"]] },
-  { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"]] },
+  { label: "学習", items: [["learning", "学習管理"], ["time", "タイマー"], ["notes", "ノート"]] },
   { label: "人生・習慣", items: [["goals", "目標管理"], ["badges", "実績・バッジ"], ["reminders", "リマインダー"]] },
   { label: "分析・レポート", items: [["report", "日報"], ["analytics", "分析・レポート"]] },
 ];
@@ -1270,28 +1270,6 @@ VIEWS.time = {
             .map(([label, value]) => ({ label, value })), fmtMin)}
         </div>
       </div>
-      </div>
-
-      <div class="section-list">
-      <div class="section">
-        <div style="padding:16px 0 18px">
-          <div class="card-head" style="margin-bottom:12px">
-            <p class="section-title" style="margin-bottom:0">${icon("book", 15)} 学習ノート</p>
-            <button class="btn sm" id="noteAdd">${icon("plus", 13)} ノートを書く</button>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-            <select id="noteFSubject" style="max-width:150px">
-              <option ${NOTE_FILTER.subject === "すべて" ? "selected" : ""}>すべて</option>
-              ${subjects.map((s) => `<option ${NOTE_FILTER.subject === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
-            </select>
-            <input type="text" id="noteFTag" placeholder="タグで絞り込み" value="${esc(NOTE_FILTER.tag)}" style="max-width:150px">
-            <input type="date" id="noteFFrom" value="${esc(NOTE_FILTER.from)}" style="max-width:145px">
-            <input type="date" id="noteFTo" value="${esc(NOTE_FILTER.to)}" style="max-width:145px">
-            ${(NOTE_FILTER.subject !== "すべて" || NOTE_FILTER.tag || NOTE_FILTER.from || NOTE_FILTER.to) ? `<button class="btn ghost sm" id="noteFClear">クリア</button>` : ""}
-          </div>
-          <div id="noteList">${noteListHTML(logs)}</div>
-        </div>
-      </div>
       </div>`;
 
     $$("#pomoDur button").forEach((b) => b.addEventListener("click", () => {
@@ -1313,6 +1291,33 @@ VIEWS.time = {
       await addStudyLog(v);
       rerender();
     });
+  },
+};
+
+// ===== ノート（学習ノート専用ページ） =====
+VIEWS.notes = {
+  title: "ノート", icon: "edit",
+  render(main) {
+    const logs = DB.study.logs;
+    const subjects = ["一般", ...DB.learning.items.map((i) => i.name), "案件作業", "その他"];
+    main.innerHTML = `
+      <div class="page-head">
+        <div><p class="eyebrow">Notes</p><h1>ノート</h1></div>
+        <button class="btn" id="noteAdd">${icon("plus", 15)} ノートを書く</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <select id="noteFSubject" style="max-width:150px">
+          <option ${NOTE_FILTER.subject === "すべて" ? "selected" : ""}>すべて</option>
+          ${subjects.map((s) => `<option ${NOTE_FILTER.subject === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+        </select>
+        <input type="text" id="noteFTag" placeholder="タグで絞り込み" value="${esc(NOTE_FILTER.tag)}" style="max-width:150px">
+        <input type="date" id="noteFFrom" value="${esc(NOTE_FILTER.from)}" style="max-width:145px">
+        <input type="date" id="noteFTo" value="${esc(NOTE_FILTER.to)}" style="max-width:145px">
+        ${(NOTE_FILTER.subject !== "すべて" || NOTE_FILTER.tag || NOTE_FILTER.from || NOTE_FILTER.to) ? `<button class="btn ghost sm" id="noteFClear">クリア</button>` : ""}
+      </div>
+      <div class="section-list"><div class="section">
+        <div style="padding:16px 0 18px" id="noteList">${noteListHTML(logs)}</div>
+      </div></div>`;
 
     const bindNoteList = () => {
       $$("[data-log]", main).forEach((el) => el.addEventListener("click", async () => {

@@ -68,14 +68,13 @@ VIEWS.learning = {
       if (was < 100 && v.progress >= 100) { await addXP(100, `${i.name} 習得！`); }
       rerender();
     }));
-    // タップでその科目の学習ノート一覧（タイマーページ）へ絞り込みジャンプ
+    // タップでその科目のノートページへ絞り込みジャンプ
     $$("[data-notes]").forEach((el) => {
       const open = () => {
         const i = DB.learning.items.find((x) => x.id === el.dataset.notes);
         if (!i) return;
         NOTE_FILTER = { subject: i.name, tag: "", from: "", to: "" };
-        go("time");
-        setTimeout(() => $("#noteList")?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+        go("notes");
       };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
