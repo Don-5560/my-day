@@ -757,11 +757,19 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 .cal-cell .cc-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: auto; }
 .cal-cell .cc-count { position: absolute; right: 5px; bottom: 4px; font-size: 9.5px; color: var(--muted); font-weight: 600; }
 .cal-cell .cc-star { position: absolute; top: 4px; right: 5px; color: var(--amber); }
-/* 収支カレンダー: 1日ごとの収入/支出を表示するセル。正方形ではなく横長にして日付列を圧迫しないようにする。
+/* 収支カレンダー: 1日ごとの収入/支出を表示するセル。「日ごとの小さなカード」ではなく、
+   グリッド線で仕切った普通のカレンダーらしい見た目にする（gap無し、セル個別のborder-radius/影も無し）。
    日曜列は日付を赤、土曜列は青に（Zaim風）。金額は省略せず全桁表示するので、多い日は自然に折り返して高さが伸びる */
-#moneyCalGrid { gap: 3px; }
-.money-cell { aspect-ratio: auto; min-height: 40px; padding: 5px 3px 3px; gap: 0; }
-.money-cell.selected { border-color: var(--accent); background: var(--accent-soft); }
+#moneyCalGrid {
+  gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--line);
+}
+.money-cell {
+  aspect-ratio: auto; min-height: 40px; padding: 5px 3px 3px; gap: 0;
+  border: none; border-radius: 0;
+  box-shadow: -1px -1px 0 0 var(--line) inset;
+}
+.money-cell.today { background: var(--accent-soft); }
+.money-cell.selected { background: var(--accent-soft); box-shadow: -1px -1px 0 0 var(--line) inset, inset 0 0 0 2px var(--accent); }
 #moneyCalGrid .cal-cell:nth-child(7n+1) .cc-num { color: var(--red); }
 #moneyCalGrid .cal-cell:nth-child(7n) .cc-num { color: var(--accent); }
 .money-cell .mc-inc, .money-cell .mc-exp {
@@ -770,6 +778,9 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 }
 .money-cell .mc-inc { color: var(--accent); }
 .money-cell .mc-exp { color: var(--red); }
+/* 収支ページのカード: 読みやすさは保ちつつ、横の余白を圧縮して空間を無駄にしない */
+.money-card { padding: 4px 10px; }
+@media (min-width: 640px) { .money-card { padding: 4px 14px; } }
 /* 取引一覧: 日付ごとのグループ見出し。グレーの帯にして日付+その日の合計を乗せる（Zaim風） */
 .tx-date-group { margin-top: 22px; }
 .tx-date-group:first-child { margin-top: 0; }

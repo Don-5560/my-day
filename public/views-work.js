@@ -1277,11 +1277,11 @@ VIEWS.money = {
       </div>
       ${MONEY_TAB === "breakdown" ? `
       <p class="small" style="color:var(--muted);margin:-8px 0 16px">${Number(mk.slice(0, 4))}年${Number(mk.slice(5))}月の内訳です。月を変えたい場合は「収支」タブで移動してください。</p>
-      <div class="section-list"><div class="grid2">
+      <div class="section-list money-card"><div class="grid2">
         <div><p class="section-title">${icon("layers", 15)} 収入（内訳）</p>${hbars(incomeRows, fmtYen)}</div>
         <div><p class="section-title">${icon("layers", 15)} 支出（内訳）</p>${hbars(expenseRows, fmtYen)}</div>
       </div></div>` : MONEY_TAB === "actual" ? `
-      <div class="section-list">
+      <div class="section-list money-card">
       <div class="section">
         <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 残高</p>
         <p class="section-highlight" style="margin-bottom:8px">${signedYen(fin.currentBalance)}</p>
@@ -1309,7 +1309,7 @@ VIEWS.money = {
         <div id="txListWrap" style="padding-top:16px;padding-bottom:18px">${moneyTxListHTML(txs, MONEY_CAL_DAY)}</div>
       </div>
       </div>` : `
-      <div class="section-list">
+      <div class="section-list money-card">
       <div class="section">
         <p class="section-title" style="margin-top:16px">${icon("layers", 15)} 全期間の収支</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;padding:2px 0 14px">
@@ -1323,9 +1323,7 @@ VIEWS.money = {
       </div>
       </div>
       <p class="small" style="color:var(--muted);margin:16px 0 16px">ここから下は手動で予想を組み立てるシミュレーションです。上の確定残高を起点に、ブロックを自由に追加して時系列で予想の収支を組み立てられます。</p>
-      <div class="section-list">
-      ${blocksHtml}
-      </div>
+      ${blocksHtml ? `<div class="section-list money-card">${blocksHtml}</div>` : ""}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
         <button class="btn ghost sm" data-block-add="income">${icon("plus", 13)} 収入ブロック</button>
         <button class="btn ghost sm" data-block-add="expense">${icon("plus", 13)} 支出ブロック</button>
