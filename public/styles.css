@@ -472,11 +472,37 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
   border: none; background: var(--surface-2); border-radius: 8px;
   padding: 5px 10px; font-size: 12.5px; color: var(--muted); width: auto; min-width: 0;
 }
-.note-page-body {
-  min-height: 42vh; outline: none; font-size: 16px; line-height: 1.85; color: var(--ink);
+/* ブロック単位の本文（Notionのような/コマンド・ドラッグ並び替え対応） */
+.note-blocks { min-height: 30vh; }
+.note-block { display: flex; align-items: flex-start; gap: 2px; position: relative; }
+.note-block.dragging { opacity: .45; }
+.note-block-handle {
+  flex: 0 0 auto; width: 18px; height: 28px; margin-top: -2px; display: flex; align-items: center; justify-content: center;
+  color: var(--faint); cursor: grab; opacity: 0; transition: opacity .12s; touch-action: none;
 }
-.note-page-body:empty::before { content: attr(data-placeholder); color: var(--faint); }
-.note-page-body div { min-height: 1.4em; }
+.note-block:hover .note-block-handle, .note-block.dragging .note-block-handle { opacity: 1; }
+.note-block-bullet { flex: 0 0 auto; width: 20px; line-height: 1.85; color: var(--muted); font-size: 15px; user-select: none; text-align: center; }
+.note-block-check { flex: 0 0 auto; margin-top: 8px; }
+.note-block-text {
+  flex: 1; min-width: 0; outline: none; line-height: 1.85; font-size: 16px; color: var(--ink); padding: 0;
+}
+.note-block-text:empty::before { content: attr(data-placeholder); color: var(--faint); }
+.note-block.type-heading .note-block-text { font-size: 20px; font-weight: 800; margin-top: 4px; }
+.note-block.type-checkbox.checked .note-block-text { color: var(--faint); text-decoration: line-through; }
+.note-divider { border: none; border-top: 1px solid var(--line); flex: 1; margin: 12px 0; }
+.note-block.type-divider { align-items: center; }
+.note-block-del { opacity: 0; }
+.note-block.type-divider:hover .note-block-del { opacity: 1; }
+.note-slash-menu {
+  position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; min-width: 190px;
+}
+.note-slash-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px;
+  border: none; background: none; text-align: left; font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer;
+}
+.note-slash-item:hover, .note-slash-item.active { background: var(--surface-2); }
+.note-slash-glyph { flex: 0 0 auto; width: 20px; text-align: center; color: var(--muted); font-weight: 700; }
 .note-links { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .note-links:empty { display: none; }
 .note-link-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--muted); }

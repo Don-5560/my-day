@@ -651,8 +651,63 @@ function stripHtmlPreview(html, maxLen = 100) {
   return text.length > maxLen ? text.slice(0, maxLen) + "…" : text;
 }
 
-// ノートの追加・編集エディタ。1枚のノートを開いて書くような全画面シートUI。
-// タイトル＋本文が主役で、日付/科目/分/タグ/リンクは本文の下にさりげなく置く（フォームっぽさを避ける）。
+// ===== ブロック型本文エディタ（Notionのような「/」コマンド・ドラッグ並び替え） =====
+
+const NOTE_BLOCK_TYPES = [
+  { type: "paragraph", label: "テキスト", glyph: "T" },
+  { type: "heading", label: "見出し", glyph: "H" },
+  { type: "bulleted", label: "箇条書きリスト", glyph: "•" },
+  { type: "numbered", label: "番号付きリスト", glyph: "1." },
+  { type: "checkbox", label: "チェックリスト", glyph: "☑" },
+  { type: "divider", label: "区切り線", glyph: "—" },
+];
+
+// 旧形式(body=フラットHTML / memo=プレーンテキスト)から段落ブロック配列へ移行する
+function migrateNoteToBlocks(note) {
+  if (Array.isArray(note.blocks) && note.blocks.length) return note.blocks.map((b) => ({ ...b, id: b.id || uid() }));
+  if (note.body) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = note.body;
+    const lines = [...tmp.childNodes].filter((n) => n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim()));
+    if (lines.length) return lines.map((n) => ({ id: uid(), type: "paragraph", html: n.nodeType === 1 ? n.innerHTML : esc(n.textContent) }));
+    return [{ id: uid(), type: "paragraph", html: note.body }];
+  }
+  if (note.memo) return [{ id: uid(), type: "paragraph", html: esc(note.memo) }];
+  return [{ id: uid(), type: "paragraph", html: "" }];
+}
+
+// 1ブロック行のHTML。番号付きリストの番号はDOM挿入後にrenumberNoteBlocks()で振り直す
+function noteBlockRowHTML(b) {
+  if (b.type === "divider") {
+    return `<div class="note-block type-divider" data-block="${b.id}" data-type="divider">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <hr class="note-divider">
+      <button type="button" class="icon-btn danger note-block-del" data-block-del>${icon("x", 14)}</button>
+    </div>`;
+  }
+  const prefix = b.type === "bulleted" ? `<span class="note-block-bullet">•</span>`
+    : b.type === "numbered" ? `<span class="note-block-bullet" data-num></span>`
+    : b.type === "checkbox" ? `<input type="checkbox" class="checkbox note-block-check" ${b.checked ? "checked" : ""}>`
+    : "";
+  return `<div class="note-block type-${b.type}${b.type === "checkbox" && b.checked ? " checked" : ""}" data-block="${b.id}" data-type="${b.type}">
+    <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+    ${prefix}
+    <div class="note-block-text" contenteditable="true" data-placeholder="${b.type === "heading" ? "見出し" : "入力するか「/」でメニュー"}">${b.html || ""}</div>
+  </div>`;
+}
+// 番号付きリストの連番を、直前のブロックも番号付きリストである連続区間ごとに振り直す
+function renumberNoteBlocks(container) {
+  let n = 0;
+  $$(".note-block", container).forEach((row) => {
+    if (row.dataset.type !== "numbered") { n = 0; return; }
+    n++;
+    const el = $("[data-num]", row);
+    if (el) el.textContent = n + ".";
+  });
+}
+
+// ノートの追加・編集エディタ。1枚のノートを開いて書くような全画面シートUI＋Notionのような
+// ブロック単位の本文編集（Enterで新規ブロック/空でBackspaceは削除/「/」でタイプ変換メニュー/ハンドルでドラッグ並び替え）。
 function studyNoteEditor(note, subjects) {
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
@@ -660,6 +715,7 @@ function studyNoteEditor(note, subjects) {
     let links = note.links?.length ? [...note.links] : (note.link ? [note.link] : [""]);
     if (!links.length) links = [""];
     const subjOptions = note.subject && !subjects.includes(note.subject) ? [note.subject, ...subjects] : subjects;
+    const initialBlocks = migrateNoteToBlocks(note);
 
     const linksHTML = () => links.map((v, i) => `
       <div class="note-link-row">
@@ -683,7 +739,7 @@ function studyNoteEditor(note, subjects) {
           <input type="number" id="noteMin" value="${note.min || ""}" placeholder="分" style="width:64px">
           <input type="text" id="noteTags" value="${esc((note.tags || []).join(", "))}" placeholder="#タグ（カンマ区切り）" style="flex:1;min-width:120px">
         </div>
-        <div id="noteBody" class="note-page-body" contenteditable="true" data-placeholder="ここに書く…">${note.body || (note.memo ? esc(note.memo) : "")}</div>
+        <div id="noteBlocks" class="note-blocks">${initialBlocks.map(noteBlockRowHTML).join("")}</div>
         <div id="noteLinks" class="note-links">${linksHTML()}</div>
         <button type="button" class="note-link-add" id="noteLinkAdd">${icon("plus", 12)} リンクを追加</button>
       </div>
@@ -695,6 +751,7 @@ function studyNoteEditor(note, subjects) {
     document.body.classList.add("modal-open");
     const close = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
+    renumberNoteBlocks($("#noteBlocks", wrap));
 
     const refreshLinks = () => { $("#noteLinks", wrap).innerHTML = linksHTML(); bindLinkRows(); };
     const bindLinkRows = () => {
@@ -707,6 +764,140 @@ function studyNoteEditor(note, subjects) {
     };
     bindLinkRows();
     $("#noteLinkAdd", wrap).addEventListener("click", () => { links.push(""); refreshLinks(); });
+
+    // ===== ブロック編集 =====
+    const blocksEl = $("#noteBlocks", wrap);
+    let slashMenu = null;
+    const closeSlashMenu = () => { slashMenu?.remove(); slashMenu = null; };
+
+    const focusTextEl = (row, atStart = false) => {
+      const t = $(".note-block-text", row);
+      if (!t) return;
+      t.focus();
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.selectNodeContents(t);
+      r.collapse(atStart);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    };
+
+    const insertBlockAfter = (row, type = "paragraph", html = "") => {
+      const b = { id: uid(), type, html };
+      row.insertAdjacentHTML("afterend", noteBlockRowHTML(b));
+      const newRow = row.nextElementSibling;
+      bindBlockRow(newRow);
+      renumberNoteBlocks(blocksEl);
+      return newRow;
+    };
+    const removeBlock = (row) => {
+      const prev = row.previousElementSibling;
+      row.remove();
+      renumberNoteBlocks(blocksEl);
+      if (prev) focusTextEl(prev, false);
+    };
+    const convertBlockType = (row, newType) => {
+      const b = { id: row.dataset.block, type: newType, html: "", checked: false };
+      row.outerHTML = noteBlockRowHTML(b);
+      const newRow = $(`[data-block="${b.id}"]`, blocksEl);
+      bindBlockRow(newRow);
+      renumberNoteBlocks(blocksEl);
+      if (newType !== "divider") focusTextEl(newRow);
+      else insertBlockAfter(newRow) && focusTextEl(newRow.nextElementSibling);
+    };
+
+    const openSlashMenu = (row, textEl) => {
+      closeSlashMenu();
+      slashMenu = document.createElement("div");
+      slashMenu.className = "note-slash-menu";
+      slashMenu.innerHTML = NOTE_BLOCK_TYPES.map((t, i) => `<button type="button" class="note-slash-item${i === 0 ? " active" : ""}" data-slash-type="${t.type}"><span class="note-slash-glyph">${t.glyph}</span>${t.label}</button>`).join("");
+      row.style.position = "relative";
+      row.appendChild(slashMenu);
+      slashMenu.style.top = row.offsetHeight + "px";
+      slashMenu.style.left = "22px";
+      $$("[data-slash-type]", slashMenu).forEach((b) => b.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        textEl.textContent = "";
+        closeSlashMenu();
+        convertBlockType(row, b.dataset.slashType);
+      }));
+    };
+
+    // ドラッグ並び替え（ポインタイベントでマウス/タッチ両対応）
+    const startDrag = (row) => {
+      row.classList.add("dragging");
+      const onMove = (e) => {
+        const y = e.clientY;
+        for (const r of $$(".note-block", blocksEl)) {
+          if (r === row) continue;
+          const rect = r.getBoundingClientRect();
+          const mid = rect.top + rect.height / 2;
+          if (y < mid && r.previousElementSibling !== row) { blocksEl.insertBefore(row, r); break; }
+          if (y >= mid && r.nextElementSibling !== row) { blocksEl.insertBefore(row, r.nextSibling); break; }
+        }
+      };
+      const onUp = () => {
+        row.classList.remove("dragging");
+        renumberNoteBlocks(blocksEl);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    };
+
+    function bindBlockRow(row) {
+      const textEl = $(".note-block-text", row);
+      if (textEl) {
+        textEl.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            closeSlashMenu();
+            // カーソル位置で分割: 後半をextractして新しいブロックへ
+            const sel = window.getSelection();
+            let afterHtml = "";
+            if (sel.rangeCount) {
+              const range = sel.getRangeAt(0);
+              const afterRange = range.cloneRange();
+              afterRange.selectNodeContents(textEl);
+              afterRange.setStart(range.endContainer, range.endOffset);
+              const frag = afterRange.extractContents();
+              const div = document.createElement("div");
+              div.appendChild(frag);
+              afterHtml = sanitizeNoteHtml(div.innerHTML);
+            }
+            if (!textEl.textContent.trim() && row.dataset.type !== "paragraph") {
+              // 空のリスト/見出しでEnter: 段落に変換して抜ける（Notionの挙動に合わせる）
+              convertBlockType(row, "paragraph");
+              return;
+            }
+            const nextType = ["bulleted", "numbered", "checkbox"].includes(row.dataset.type) ? row.dataset.type : "paragraph";
+            const newRow = insertBlockAfter(row, nextType, afterHtml);
+            focusTextEl(newRow, true);
+          } else if (e.key === "Backspace") {
+            if (!textEl.textContent.trim() && $$(".note-block", blocksEl).length > 1) {
+              e.preventDefault();
+              closeSlashMenu();
+              removeBlock(row);
+            }
+          } else if (e.key === "Escape") {
+            closeSlashMenu();
+          }
+        });
+        textEl.addEventListener("input", () => {
+          if (textEl.textContent === "/") openSlashMenu(row, textEl);
+          else closeSlashMenu();
+        });
+        textEl.addEventListener("blur", () => setTimeout(closeSlashMenu, 150));
+      }
+      const check = $(".note-block-check", row);
+      if (check) check.addEventListener("change", () => row.classList.toggle("checked", check.checked));
+      const delBtn = $("[data-block-del]", row);
+      if (delBtn) delBtn.addEventListener("click", () => removeBlock(row));
+      const handle = $("[data-drag]", row);
+      if (handle) handle.addEventListener("pointerdown", (e) => { e.preventDefault(); startDrag(row); });
+    }
+    $$(".note-block", blocksEl).forEach(bindBlockRow);
 
     // ツールバー: mousedownでpreventDefaultし、本文のフォーカス/選択範囲を失わせない
     $$("[data-note-size]", wrap).forEach((b) => b.addEventListener("mousedown", (e) => {
@@ -725,8 +916,21 @@ function studyNoteEditor(note, subjects) {
     }
     $("#noteSave", wrap).addEventListener("click", () => {
       const title = $("#noteTitle", wrap).value.trim();
-      const bodyHtml = sanitizeNoteHtml($("#noteBody", wrap).innerHTML);
       const min = Number($("#noteMin", wrap).value) || 0;
+      const blocks = $$(".note-block", blocksEl).map((row) => {
+        const type = row.dataset.type;
+        if (type === "divider") return { id: row.dataset.block, type, html: "" };
+        const textEl = $(".note-block-text", row);
+        const html = sanitizeNoteHtml(textEl.innerHTML);
+        const out = { id: row.dataset.block, type, html };
+        if (type === "checkbox") out.checked = $(".note-block-check", row)?.checked || false;
+        return out;
+      }).filter((b) => b.type === "divider" || stripHtmlPreview(b.html, 1));
+      const bodyHtml = blocks.map((b) => {
+        if (b.type === "divider") return "<div>ーーーーー</div>";
+        const prefix = b.type === "bulleted" ? "• " : b.type === "checkbox" ? (b.checked ? "☑ " : "☐ ") : "";
+        return `<div>${prefix}${b.html}</div>`;
+      }).join("");
       const bodyText = stripHtmlPreview(bodyHtml, 1);
       if (!title && !bodyText && !min) { toast("タイトル・本文・分のいずれかを入力してください", "x"); return; }
       close({
@@ -737,6 +941,7 @@ function studyNoteEditor(note, subjects) {
         tags: $("#noteTags", wrap).value.split(/[,、]/).map((s) => s.trim()).filter(Boolean),
         links: links.map((s) => s.trim()).filter(Boolean),
         body: bodyHtml,
+        blocks,
       });
     });
   });
