@@ -33,6 +33,74 @@ const monthKey = (iso) => iso.slice(0, 7);
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}` : `${m}分`);
 const fmtHM = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? " " + (m % 60) + "m" : ""}` : `${m}m`); // 2h 15m / 45m
 const fmtDateFull = (iso) => { const d = new Date(iso + "T00:00:00"); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 (${WD[d.getDay()]})`; };
+
+// ===== 日本の祝日（計算式。振替休日・国民の休日も反映） =====
+// 春分の日・秋分の日は国立天文台の観測で毎年官報告示されるため、将来の年は近似式での予測値
+const jpIso = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+function vernalEquinoxDay(y) {
+  if (y < 1980 || y > 2099) return null;
+  return Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+}
+function autumnalEquinoxDay(y) {
+  if (y < 1980 || y > 2099) return null;
+  return Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+}
+function nthMondayOfMonth(y, m, n) {
+  let count = 0;
+  const days = new Date(y, m, 0).getDate();
+  for (let d = 1; d <= days; d++) {
+    if (new Date(y, m - 1, d).getDay() === 1) { count++; if (count === n) return d; }
+  }
+  return null;
+}
+const _jpHolidayCache = {};
+function jpHolidaysOfYear(y) {
+  if (_jpHolidayCache[y]) return _jpHolidayCache[y];
+  const H = {};
+  const add = (m, d, name) => { if (d) H[jpIso(y, m, d)] = name; };
+  add(1, 1, "元日");
+  add(1, nthMondayOfMonth(y, 1, 2), "成人の日");
+  add(2, 11, "建国記念の日");
+  if (y >= 2020) add(2, 23, "天皇誕生日");
+  add(3, vernalEquinoxDay(y), "春分の日");
+  add(4, 29, "昭和の日");
+  add(5, 3, "憲法記念日");
+  add(5, 4, "みどりの日");
+  add(5, 5, "こどもの日");
+  add(7, nthMondayOfMonth(y, 7, 3), "海の日");
+  add(8, 11, "山の日");
+  add(9, nthMondayOfMonth(y, 9, 3), "敬老の日");
+  add(9, autumnalEquinoxDay(y), "秋分の日");
+  add(10, nthMondayOfMonth(y, 10, 2), "スポーツの日");
+  add(11, 3, "文化の日");
+  add(11, 23, "勤労感謝の日");
+  // 国民の休日: 前後を祝日に挟まれた（日曜以外の）平日は休日になる
+  for (let m = 1; m <= 12; m++) {
+    const days = new Date(y, m, 0).getDate();
+    for (let d = 2; d < days; d++) {
+      const cur = jpIso(y, m, d);
+      if (H[cur]) continue;
+      if (H[jpIso(y, m, d - 1)] && H[jpIso(y, m, d + 1)] && new Date(y, m - 1, d).getDay() !== 0) {
+        H[cur] = "国民の休日";
+      }
+    }
+  }
+  // 振替休日: 祝日が日曜なら、その後の直近の祝日でない日が休日になる
+  for (const iso of Object.keys(H).sort()) {
+    const d = new Date(iso + "T00:00:00");
+    if (d.getDay() !== 0) continue;
+    const next = new Date(d);
+    do { next.setDate(next.getDate() + 1); } while (H[jpIso(next.getFullYear(), next.getMonth() + 1, next.getDate())]);
+    H[jpIso(next.getFullYear(), next.getMonth() + 1, next.getDate())] = "振替休日";
+  }
+  _jpHolidayCache[y] = H;
+  return H;
+}
+// 指定isoが祝日なら名前を、そうでなければnullを返す（年をまたぐ範囲でも呼び出し側でループすればOK）
+function jpHolidayName(iso) {
+  const y = +iso.slice(0, 4);
+  return jpHolidaysOfYear(y)[iso] || null;
+}
 // 相対時間（「2時間前」など）
 function relTime(ts) {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));

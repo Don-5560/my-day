@@ -696,8 +696,12 @@ function moneyCalGridHTML(mk, txs) {
     const d = new Date(iso + "T00:00:00");
     const other = d.getMonth() !== m - 1;
     const day = byDate[iso];
-    const cls = ["cal-cell", "money-cell", other ? "other" : "", iso === today ? "today" : "", MONEY_CAL_DAY === iso ? "selected" : ""].join(" ");
-    cells += `<button class="${cls}" ${other ? "" : `data-mday="${iso}"`}>
+    // 祝日は赤にする。土日は既存の色（日曜赤・土曜青）を優先し、平日の祝日だけ赤にする
+    const dow = d.getDay();
+    const holidayName = jpHolidayName(iso);
+    const isHoliday = holidayName && dow !== 0 && dow !== 6;
+    const cls = ["cal-cell", "money-cell", other ? "other" : "", iso === today ? "today" : "", MONEY_CAL_DAY === iso ? "selected" : "", isHoliday ? "holiday" : ""].join(" ");
+    cells += `<button class="${cls}" ${other ? "" : `data-mday="${iso}"`} ${holidayName ? `title="${esc(holidayName)}"` : ""}>
       <span class="cc-num">${d.getDate()}</span>
       ${day?.income ? `<span class="mc-inc">+${Math.round(day.income).toLocaleString()}</span>` : ""}
       ${day?.expense ? `<span class="mc-exp">-${Math.round(day.expense).toLocaleString()}</span>` : ""}
