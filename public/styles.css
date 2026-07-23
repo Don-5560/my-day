@@ -447,15 +447,46 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .color-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
 .color-swatch.active { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--ink); }
 
-/* 学習ノート: 部分装飾つきリッチテキスト本文 */
-.note-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
-.note-body {
-  min-height: 180px; max-height: 50vh; overflow-y: auto;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
-  padding: 12px 14px; font-size: 14.5px; line-height: 1.7; outline: none;
+/* 学習ノート: ノートアプリ風の全画面シートエディタ（1枚のノートを開く感覚。フォームっぽさを避ける） */
+.note-sheet {
+  position: fixed; inset: 0; z-index: 65; background: var(--bg-2);
+  display: flex; flex-direction: column; animation: fadeUp .2s ease;
 }
-.note-body:focus { border-color: var(--accent); }
-.note-body div { min-height: 1.4em; }
+.note-sheet-top {
+  display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.note-sheet-body {
+  flex: 1; overflow-y: auto; padding: 18px clamp(16px, 4vw, 15%) calc(24px + env(safe-area-inset-bottom));
+  max-width: 760px; margin: 0 auto; width: 100%;
+}
+.note-sheet .note-page-title {
+  display: block; width: 100%; border: none; background: none; outline: none;
+  font: inherit; font-size: clamp(21px, 4vw, 27px); font-weight: 800; letter-spacing: -.01em;
+  color: var(--ink); padding: 0; margin-bottom: 12px;
+}
+.note-page-title::placeholder { color: var(--faint); }
+.note-page-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.note-sheet .note-page-meta input, .note-sheet .note-page-meta select {
+  border: none; background: var(--surface-2); border-radius: 8px;
+  padding: 5px 10px; font-size: 12.5px; color: var(--muted); width: auto; min-width: 0;
+}
+.note-page-body {
+  min-height: 42vh; outline: none; font-size: 16px; line-height: 1.85; color: var(--ink);
+}
+.note-page-body:empty::before { content: attr(data-placeholder); color: var(--faint); }
+.note-page-body div { min-height: 1.4em; }
+.note-links { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.note-links:empty { display: none; }
+.note-link-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--muted); }
+.note-sheet .note-link-row input { flex: 1; min-width: 0; border: none; background: none; padding: 3px 0; font-size: 13px; color: var(--accent); outline: none; }
+.note-link-add { border: none; background: none; color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 4px 0; display: inline-flex; align-items: center; gap: 4px; }
+.note-sheet-toolbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 0 0 auto;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line); background: var(--surface);
+}
 
 /* タスク詳細モーダルの情報表示 */
 .td-info { margin-top: 6px; }

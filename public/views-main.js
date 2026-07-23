@@ -651,7 +651,8 @@ function stripHtmlPreview(html, maxLen = 100) {
   return text.length > maxLen ? text.slice(0, maxLen) + "…" : text;
 }
 
-// ノートの追加・編集エディタ（タイトル/日付/科目/分/タグ/リンク複数/部分装飾つき本文）
+// ノートの追加・編集エディタ。1枚のノートを開いて書くような全画面シートUI。
+// タイトル＋本文が主役で、日付/科目/分/タグ/リンクは本文の下にさりげなく置く（フォームっぽさを避ける）。
 function studyNoteEditor(note, subjects) {
   return new Promise((resolve) => {
     const wrap = $("#modalWrap");
@@ -661,40 +662,38 @@ function studyNoteEditor(note, subjects) {
     const subjOptions = note.subject && !subjects.includes(note.subject) ? [note.subject, ...subjects] : subjects;
 
     const linksHTML = () => links.map((v, i) => `
-      <div class="f-row2" style="margin-top:6px">
+      <div class="note-link-row">
+        ${icon("external", 13)}
         <input type="url" data-link-input="${i}" value="${esc(v)}" placeholder="https://…">
-        <button type="button" class="icon-btn danger" data-link-del="${i}">${icon("x", 15)}</button>
+        <button type="button" class="icon-btn danger" data-link-del="${i}">${icon("x", 14)}</button>
       </div>`).join("");
 
-    wrap.innerHTML = `<div class="overlay"><div class="modal" style="width:min(94vw,640px);max-width:640px">
-      <div class="modal-head"><h3>${isEdit ? "ノートを編集" : "ノートを書く"}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
-      <label class="f-label" style="margin-top:6px">タイトル（任意）</label>
-      <input type="text" id="noteTitle" placeholder="未入力なら日付が表示されます" value="${esc(note.title || "")}">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div><label class="f-label">日付</label><input type="date" id="noteDate" value="${esc(note.date || todayStr())}"></div>
-        <div><label class="f-label">科目</label><select id="noteSubject">${subjOptions.map((s) => `<option ${s === note.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
-        <div><label class="f-label">分（任意）</label><input type="number" id="noteMin" value="${note.min || ""}" placeholder="60"></div>
+    wrap.innerHTML = `<div class="note-sheet">
+      <div class="note-sheet-top">
+        <button type="button" class="icon-btn" data-x aria-label="閉じる">${icon("x", 20)}</button>
+        <div style="flex:1"></div>
+        ${isEdit ? `<button type="button" class="icon-btn danger" data-del aria-label="削除">${icon("trash", 18)}</button>` : ""}
+        <button type="button" class="btn sm" id="noteSave">${icon("checkline", 14)} 完了</button>
       </div>
-      <label class="f-label">タグ（任意・カンマ区切り）</label>
-      <input type="text" id="noteTags" value="${esc((note.tags || []).join(", "))}" placeholder="React, 案件系">
-      <label class="f-label">参考リンク（任意）</label>
-      <div id="noteLinks">${linksHTML()}</div>
-      <button type="button" class="btn ghost sm" id="noteLinkAdd" style="margin-top:8px">${icon("plus", 13)} リンクを追加</button>
-      <label class="f-label">本文</label>
-      <div class="note-toolbar">
+      <div class="note-sheet-body">
+        <input type="text" id="noteTitle" class="note-page-title" placeholder="タイトルなし" value="${esc(note.title || "")}">
+        <div class="note-page-meta">
+          <input type="date" id="noteDate" value="${esc(note.date || todayStr())}">
+          <select id="noteSubject">${subjOptions.map((s) => `<option ${s === note.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+          <input type="number" id="noteMin" value="${note.min || ""}" placeholder="分" style="width:64px">
+          <input type="text" id="noteTags" value="${esc((note.tags || []).join(", "))}" placeholder="#タグ（カンマ区切り）" style="flex:1;min-width:120px">
+        </div>
+        <div id="noteBody" class="note-page-body" contenteditable="true" data-placeholder="ここに書く…">${note.body || (note.memo ? esc(note.memo) : "")}</div>
+        <div id="noteLinks" class="note-links">${linksHTML()}</div>
+        <button type="button" class="note-link-add" id="noteLinkAdd">${icon("plus", 12)} リンクを追加</button>
+      </div>
+      <div class="note-sheet-toolbar">
         <div class="seg">${NOTE_FONT_SIZES.map((f) => `<button type="button" data-note-size="${f.size}" data-note-weight="${f.weight || ""}">${esc(f.label)}</button>`).join("")}</div>
         <div class="color-grid" style="margin:0">${NOTE_COLORS.map((c) => `<button type="button" class="color-swatch" style="background:${c}" data-note-color="${c}"></button>`).join("")}</div>
       </div>
-      <div id="noteBody" class="note-body" contenteditable="true">${note.body || (note.memo ? esc(note.memo) : "")}</div>
-      <div class="modal-foot">
-        ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
-        <button type="button" class="btn ghost" data-x>キャンセル</button>
-        <button type="button" class="btn" id="noteSave">${icon("checkline", 15)} 保存</button>
-      </div>
-    </div></div>`;
+    </div>`;
     document.body.classList.add("modal-open");
     const close = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
-    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(null); });
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
 
     const refreshLinks = () => { $("#noteLinks", wrap).innerHTML = linksHTML(); bindLinkRows(); };
