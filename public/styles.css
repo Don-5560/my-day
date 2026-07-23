@@ -742,9 +742,10 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 
 /* 月グリッド */
 .cal-wd { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px; color: var(--faint); font-weight: 600; margin-bottom: 8px; }
-/* 収支カレンダーの曜日行だけ平日=黒・休み(土日)=赤にする（一般カレンダーの.cal-wdはそのまま） */
+/* 収支カレンダーの曜日行だけ平日=黒・日曜=赤・土曜=青にする（一般カレンダーの.cal-wdはそのまま） */
+.cal-wd.money-wd span { color: var(--ink); }
 .cal-wd.money-wd span:first-child { color: var(--red); }
-.cal-wd.money-wd span:last-child { color: var(--red); }
+.cal-wd.money-wd span:last-child { color: var(--accent); }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .cal-cell {
   aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
@@ -770,8 +771,9 @@ code { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; b
 }
 .money-cell.today { background: var(--accent-soft); }
 .money-cell.selected { background: var(--accent-soft); box-shadow: -1px -1px 0 0 var(--line) inset, inset 0 0 0 2px var(--accent); }
+#moneyCalGrid .cal-cell .cc-num { color: var(--ink); }
 #moneyCalGrid .cal-cell:nth-child(7n+1) .cc-num { color: var(--red); }
-#moneyCalGrid .cal-cell:nth-child(7n) .cc-num { color: var(--red); }
+#moneyCalGrid .cal-cell:nth-child(7n) .cc-num { color: var(--accent); }
 .money-cell .mc-inc, .money-cell .mc-exp {
   font-size: 9px; font-weight: 700; line-height: 1.15; letter-spacing: -.2px;
   max-width: 100%; overflow-wrap: anywhere;
