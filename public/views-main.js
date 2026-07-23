@@ -585,6 +585,164 @@ async function addStudyLog(v) {
   await addXP(Math.min(v.min, 120), "勉強を記録");
 }
 
+// ===== 学習ノート（自由記述・部分装飾対応の本文を持つ学習ログ） =====
+
+let NOTE_FILTER = { subject: "すべて", tag: "", from: "", to: "" };
+const NOTE_FONT_SIZES = [
+  { label: "小", size: "12px" },
+  { label: "標準", size: "15px" },
+  { label: "大", size: "20px" },
+  { label: "見出し", size: "26px", weight: "800" },
+];
+const NOTE_COLORS = ["#1A1D26", "#EF4444", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"];
+const NOTE_ALLOWED_TAGS = new Set(["DIV", "BR", "SPAN", "B", "STRONG", "I", "EM", "UL", "OL", "LI", "P"]);
+
+// 選択範囲にインラインstyleを適用（execCommandに頼らず、自前でRangeを包む。ブラウザ間の挙動差を避けるため）
+function applyNoteStyle(styleProps) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  const span = document.createElement("span");
+  Object.entries(styleProps).forEach(([k, v]) => (span.style[k] = v));
+  try {
+    range.surroundContents(span);
+  } catch {
+    const frag = range.extractContents();
+    span.appendChild(frag);
+    range.insertNode(span);
+  }
+  sel.removeAllRanges();
+  const newRange = document.createRange();
+  newRange.selectNodeContents(span);
+  sel.addRange(newRange);
+}
+
+// 保存前にHTMLをホワイトリストでサニタイズ（許可外タグは中身だけ残して展開、style属性もcolor/font-size/font-weightのみ許可）
+function sanitizeNoteHtml(html) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html || "";
+  const clean = (root) => {
+    [...root.childNodes].forEach((node) => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        clean(node);
+        if (!NOTE_ALLOWED_TAGS.has(node.tagName)) {
+          if (node.tagName === "SCRIPT" || node.tagName === "STYLE") node.remove();
+          else node.replaceWith(...node.childNodes);
+          return;
+        }
+        const { color, fontSize, fontWeight } = node.style;
+        [...node.attributes].forEach((a) => node.removeAttribute(a.name));
+        if (color) node.style.color = color;
+        if (fontSize) node.style.fontSize = fontSize;
+        if (fontWeight) node.style.fontWeight = fontWeight;
+      } else if (node.nodeType !== Node.TEXT_NODE) {
+        node.remove();
+      }
+    });
+  };
+  clean(tmp);
+  return tmp.innerHTML;
+}
+// 一覧プレビュー用にHTMLからプレーンテキストを抜き出す
+function stripHtmlPreview(html, maxLen = 100) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html || "";
+  const text = (tmp.textContent || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLen ? text.slice(0, maxLen) + "…" : text;
+}
+
+// ノートの追加・編集エディタ（タイトル/日付/科目/分/タグ/リンク複数/部分装飾つき本文）
+function studyNoteEditor(note, subjects) {
+  return new Promise((resolve) => {
+    const wrap = $("#modalWrap");
+    const isEdit = !!note.id;
+    let links = note.links?.length ? [...note.links] : (note.link ? [note.link] : [""]);
+    if (!links.length) links = [""];
+    const subjOptions = note.subject && !subjects.includes(note.subject) ? [note.subject, ...subjects] : subjects;
+
+    const linksHTML = () => links.map((v, i) => `
+      <div class="f-row2" style="margin-top:6px">
+        <input type="url" data-link-input="${i}" value="${esc(v)}" placeholder="https://…">
+        <button type="button" class="icon-btn danger" data-link-del="${i}">${icon("x", 15)}</button>
+      </div>`).join("");
+
+    wrap.innerHTML = `<div class="overlay"><div class="modal" style="width:min(94vw,640px);max-width:640px">
+      <div class="modal-head"><h3>${isEdit ? "ノートを編集" : "ノートを書く"}</h3><button type="button" class="icon-btn" data-x>${icon("x", 17)}</button></div>
+      <label class="f-label" style="margin-top:6px">タイトル（任意）</label>
+      <input type="text" id="noteTitle" placeholder="未入力なら日付が表示されます" value="${esc(note.title || "")}">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div><label class="f-label">日付</label><input type="date" id="noteDate" value="${esc(note.date || todayStr())}"></div>
+        <div><label class="f-label">科目</label><select id="noteSubject">${subjOptions.map((s) => `<option ${s === note.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
+        <div><label class="f-label">分（任意）</label><input type="number" id="noteMin" value="${note.min || ""}" placeholder="60"></div>
+      </div>
+      <label class="f-label">タグ（任意・カンマ区切り）</label>
+      <input type="text" id="noteTags" value="${esc((note.tags || []).join(", "))}" placeholder="React, 案件系">
+      <label class="f-label">参考リンク（任意）</label>
+      <div id="noteLinks">${linksHTML()}</div>
+      <button type="button" class="btn ghost sm" id="noteLinkAdd" style="margin-top:8px">${icon("plus", 13)} リンクを追加</button>
+      <label class="f-label">本文</label>
+      <div class="note-toolbar">
+        <div class="seg">${NOTE_FONT_SIZES.map((f) => `<button type="button" data-note-size="${f.size}" data-note-weight="${f.weight || ""}">${esc(f.label)}</button>`).join("")}</div>
+        <div class="color-grid" style="margin:0">${NOTE_COLORS.map((c) => `<button type="button" class="color-swatch" style="background:${c}" data-note-color="${c}"></button>`).join("")}</div>
+      </div>
+      <div id="noteBody" class="note-body" contenteditable="true">${note.body || (note.memo ? esc(note.memo) : "")}</div>
+      <div class="modal-foot">
+        ${isEdit ? `<button type="button" class="btn ghost" data-del style="margin-right:auto;color:var(--red);border-color:var(--red)">${icon("trash", 14)} 削除</button>` : ""}
+        <button type="button" class="btn ghost" data-x>キャンセル</button>
+        <button type="button" class="btn" id="noteSave">${icon("checkline", 15)} 保存</button>
+      </div>
+    </div></div>`;
+    document.body.classList.add("modal-open");
+    const close = (result) => { wrap.innerHTML = ""; document.body.classList.remove("modal-open"); resolve(result); };
+    wrap.querySelector(".overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(null); });
+    $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
+
+    const refreshLinks = () => { $("#noteLinks", wrap).innerHTML = linksHTML(); bindLinkRows(); };
+    const bindLinkRows = () => {
+      $$("[data-link-input]", wrap).forEach((inp) => inp.addEventListener("input", () => { links[Number(inp.dataset.linkInput)] = inp.value; }));
+      $$("[data-link-del]", wrap).forEach((b) => b.addEventListener("click", () => {
+        links.splice(Number(b.dataset.linkDel), 1);
+        if (!links.length) links = [""];
+        refreshLinks();
+      }));
+    };
+    bindLinkRows();
+    $("#noteLinkAdd", wrap).addEventListener("click", () => { links.push(""); refreshLinks(); });
+
+    // ツールバー: mousedownでpreventDefaultし、本文のフォーカス/選択範囲を失わせない
+    $$("[data-note-size]", wrap).forEach((b) => b.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      applyNoteStyle({ fontSize: b.dataset.noteSize, fontWeight: b.dataset.noteWeight || "normal" });
+    }));
+    $$("[data-note-color]", wrap).forEach((b) => b.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      applyNoteStyle({ color: b.dataset.noteColor });
+    }));
+
+    if (isEdit) {
+      $("[data-del]", wrap).addEventListener("click", async () => {
+        if (await confirmBox("このノートを削除しますか？")) close({ __delete: true });
+      });
+    }
+    $("#noteSave", wrap).addEventListener("click", () => {
+      const title = $("#noteTitle", wrap).value.trim();
+      const bodyHtml = sanitizeNoteHtml($("#noteBody", wrap).innerHTML);
+      const min = Number($("#noteMin", wrap).value) || 0;
+      const bodyText = stripHtmlPreview(bodyHtml, 1);
+      if (!title && !bodyText && !min) { toast("タイトル・本文・分のいずれかを入力してください", "x"); return; }
+      close({
+        title,
+        date: $("#noteDate", wrap).value || todayStr(),
+        subject: $("#noteSubject", wrap).value,
+        min,
+        tags: $("#noteTags", wrap).value.split(/[,、]/).map((s) => s.trim()).filter(Boolean),
+        links: links.map((s) => s.trim()).filter(Boolean),
+        body: bodyHtml,
+      });
+    });
+  });
+}
+
 // 「やったことを記録」: 種類を選ぶと、対応する管理ページ（勉強/売上/営業/作品）に自動で記録される
 async function logActivity() {
   const types = [
@@ -913,17 +1071,21 @@ VIEWS.time = {
       <div class="section-list">
       <div class="section">
         <div style="padding:16px 0 18px">
-          <p class="section-title">${icon("book", 15)} 最近の学習ログ</p>
-          ${[...logs].sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id))).slice(0, 15).map((l) => `
-            <div class="list-item" data-log="${l.id}" role="button" tabindex="0" style="cursor:pointer">
-              <span class="li-time">${esc(fmtShort(l.date))}</span>
-              <div class="li-body">
-                <div class="li-title">${esc(l.subject)} <span class="pill">${fmtMin(l.min)}</span></div>
-                ${l.tags?.length ? `<div class="small muted">${l.tags.map((t) => "#" + esc(t)).join(" ")}</div>` : ""}
-                ${l.memo ? `<div class="li-memo">${esc(l.memo)}</div>` : ""}
-              </div>
-              ${l.link ? `<a class="icon-btn" href="${esc(l.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${icon("external", 14)}</a>` : ""}
-            </div>`).join("") || '<p class="empty">まだ記録がありません</p>'}
+          <div class="card-head" style="margin-bottom:12px">
+            <p class="section-title" style="margin-bottom:0">${icon("book", 15)} 学習ノート</p>
+            <button class="btn sm" id="noteAdd">${icon("plus", 13)} ノートを書く</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <select id="noteFSubject" style="max-width:150px">
+              <option ${NOTE_FILTER.subject === "すべて" ? "selected" : ""}>すべて</option>
+              ${subjects.map((s) => `<option ${NOTE_FILTER.subject === s ? "selected" : ""}>${esc(s)}</option>`).join("")}
+            </select>
+            <input type="text" id="noteFTag" placeholder="タグで絞り込み" value="${esc(NOTE_FILTER.tag)}" style="max-width:150px">
+            <input type="date" id="noteFFrom" value="${esc(NOTE_FILTER.from)}" style="max-width:145px">
+            <input type="date" id="noteFTo" value="${esc(NOTE_FILTER.to)}" style="max-width:145px">
+            ${(NOTE_FILTER.subject !== "すべて" || NOTE_FILTER.tag || NOTE_FILTER.from || NOTE_FILTER.to) ? `<button class="btn ghost sm" id="noteFClear">クリア</button>` : ""}
+          </div>
+          <div id="noteList">${noteListHTML(logs)}</div>
         </div>
       </div>
       </div>`;
@@ -948,21 +1110,72 @@ VIEWS.time = {
       rerender();
     });
 
-    $$("[data-log]").forEach((el) => el.addEventListener("click", async () => {
-      const l = DB.study.logs.find((x) => x.id === el.dataset.log);
-      if (!l) return;
-      const v = await modal("学習ログを編集", studyFields(subjects, l.date, l.subject), l, { onDelete: "この学習ログを削除しますか？" });
+    const bindNoteList = () => {
+      $$("[data-log]", main).forEach((el) => el.addEventListener("click", async () => {
+        const l = DB.study.logs.find((x) => x.id === el.dataset.log);
+        if (!l) return;
+        const v = await studyNoteEditor(l, subjects);
+        if (!v) return;
+        if (v.__delete) {
+          DB.study.logs = DB.study.logs.filter((x) => x.id !== l.id);
+        } else {
+          Object.assign(l, v);
+        }
+        await saveDb("study");
+        $("#noteList", main).innerHTML = noteListHTML(DB.study.logs);
+        bindNoteList();
+      }));
+    };
+    bindNoteList();
+
+    $("#noteAdd").addEventListener("click", async () => {
+      const v = await studyNoteEditor({}, subjects);
       if (!v) return;
-      if (v.__delete) {
-        DB.study.logs = DB.study.logs.filter((x) => x.id !== l.id);
-      } else {
-        Object.assign(l, { date: v.date || l.date, min: v.min || l.min, subject: v.subject, tags: v.tags || [], link: v.link || "", memo: v.memo || "" });
-      }
+      DB.study.logs.push({ id: uid(), createdAt: new Date().toISOString(), src: "manual", ...v });
       await saveDb("study");
-      rerender();
-    }));
+      if (v.min) await addXP(Math.min(v.min, 120), "勉強を記録");
+      toast("ノートを保存しました");
+      $("#noteList", main).innerHTML = noteListHTML(DB.study.logs);
+      bindNoteList();
+    });
+
+    const refreshNoteList = () => { $("#noteList", main).innerHTML = noteListHTML(DB.study.logs); bindNoteList(); };
+    $("#noteFSubject").addEventListener("change", (e) => { NOTE_FILTER.subject = e.target.value; rerender(); });
+    $("#noteFTag").addEventListener("input", (e) => { NOTE_FILTER.tag = e.target.value; refreshNoteList(); });
+    $("#noteFFrom").addEventListener("change", (e) => { NOTE_FILTER.from = e.target.value; rerender(); });
+    $("#noteFTo").addEventListener("change", (e) => { NOTE_FILTER.to = e.target.value; rerender(); });
+    $("#noteFClear")?.addEventListener("click", () => { NOTE_FILTER = { subject: "すべて", tag: "", from: "", to: "" }; rerender(); });
   },
 };
+
+// フィルタ済みノート一覧のHTML（新しい順）
+function filteredNotes(logs) {
+  return logs.filter((l) => {
+    if (NOTE_FILTER.subject !== "すべて" && l.subject !== NOTE_FILTER.subject) return false;
+    if (NOTE_FILTER.tag && !(l.tags || []).some((t) => t.toLowerCase().includes(NOTE_FILTER.tag.toLowerCase()))) return false;
+    if (NOTE_FILTER.from && l.date < NOTE_FILTER.from) return false;
+    if (NOTE_FILTER.to && l.date > NOTE_FILTER.to) return false;
+    return true;
+  }).sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(b.id).localeCompare(String(a.id)));
+}
+function noteItemHTML(l) {
+  const title = l.title || fmtDateFull(l.date);
+  const preview = l.body ? stripHtmlPreview(l.body) : (l.memo || "");
+  const linksArr = l.links?.length ? l.links : (l.link ? [l.link] : []);
+  return `<div class="list-item" data-log="${l.id}" role="button" tabindex="0" style="cursor:pointer">
+    <span class="li-time">${esc(fmtShort(l.date))}</span>
+    <div class="li-body">
+      <div class="li-title">${esc(title)} <span class="pill">${esc(l.subject)}</span>${l.min ? ` <span class="pill">${fmtMin(l.min)}</span>` : ""}</div>
+      ${l.tags?.length ? `<div class="small muted">${l.tags.map((t) => "#" + esc(t)).join(" ")}</div>` : ""}
+      ${preview ? `<div class="li-memo">${esc(preview)}</div>` : ""}
+    </div>
+    ${linksArr.length ? `<span class="pill">${icon("external", 10)} ${linksArr.length}</span>` : ""}
+  </div>`;
+}
+function noteListHTML(logs) {
+  const items = filteredNotes(logs).slice(0, 30);
+  return items.map(noteItemHTML).join("") || '<p class="empty">条件に合うノートがありません</p>';
+}
 
 // ===== 日報 =====
 

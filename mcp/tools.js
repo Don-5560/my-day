@@ -8,6 +8,13 @@ import * as store from "../lib/store.js";
 // フロント(core.js)と同じXPルール。MCP経由の行動にもXPを付けて整合させる。
 const XP = { task: 10, todoHigh: 20, todoMid: 10, todoLow: 5, diary: 15, project: 200, projectPaid: 300 };
 
+// プレーンテキストを学習ノート本文用の安全なHTMLに変換（改行を<br>に）。
+// フロントのリッチテキストエディタが保存するHTMLと同じ表示経路(innerHTML)で描画されるため、必ずエスケープする。
+function textToNoteHtml(text) {
+  const esc = String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  return esc.split(/\r?\n/).map((line) => `<div>${line || "<br>"}</div>`).join("");
+}
+
 async function awardXp(amt, why) {
   const xp = (await store.getDoc("xp")) ?? { events: [] };
   xp.events.push({ id: randomUUID(), ts: Date.now(), amt, why });
@@ -154,16 +161,19 @@ export const TOOLS = [
   },
   {
     name: "log_study",
-    description: "勉強時間を記録する（分単位）。メモ・タグ・参考リンクも残せる。学習グラフとXPに反映される。",
+    description: "勉強時間を記録する（分単位）。タイトル・本文（自由記述ノート）・タグ・参考リンクも残せる。学習グラフとXPに反映される。",
     inputSchema: {
       type: "object",
       properties: {
         min: { type: "number", description: "勉強した分数" },
         subject: { type: "string", description: "科目（例: React, JavaScript, 一般）" },
         date: { type: "string", description: "YYYY-MM-DD。省略で今日" },
-        memo: { type: "string", description: "やった内容・詰まった点・次回やることなどの自由メモ" },
+        title: { type: "string", description: "ノートのタイトル（任意。省略時は日付が代わりに表示される）" },
+        body: { type: "string", description: "やった内容・詰まった点・次回やることなどの自由記述ノート本文（プレーンテキスト）" },
+        memo: { type: "string", description: "非推奨。bodyを使うこと（後方互換のため残置）" },
         tags: { type: "array", items: { type: "string" }, description: "タグ（例: [\"React\",\"案件系\"]）" },
-        link: { type: "string", description: "参考リンク（YouTube・記事URLなど）" },
+        links: { type: "array", items: { type: "string" }, description: "参考リンク（YouTube・記事URLなど、複数可）" },
+        link: { type: "string", description: "非推奨。linksを使うこと（後方互換のため残置）" },
       },
       required: ["min"],
     },
@@ -517,14 +527,21 @@ export async function callTool(name, args = {}) {
 
     case "log_study": {
       const doc = (await store.getDoc("study")) ?? { logs: [] };
+      const bodyText = args.body || args.memo || "";
+      const links = Array.isArray(args.links) ? args.links.map(String).map((s) => s.trim()).filter(Boolean)
+        : args.link ? [String(args.link).trim()] : [];
       const log = {
         id: randomUUID(),
         date: args.date || store.today(),
         min: Math.max(1, Math.round(args.min)),
         subject: args.subject || "一般",
+        title: args.title || "",
+        body: bodyText ? textToNoteHtml(bodyText) : "",
         memo: args.memo || "",
         tags: Array.isArray(args.tags) ? args.tags.map(String).map((s) => s.trim()).filter(Boolean) : [],
-        link: args.link || "",
+        links,
+        link: links[0] || "",
+        createdAt: new Date().toISOString(),
         src: "ai",
       };
       doc.logs.push(log);

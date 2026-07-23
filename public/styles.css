@@ -444,8 +444,18 @@ h1 { margin: 2px 0 0; font-size: clamp(22px, 3vw, 28px); font-weight: 800; lette
 .cat-handle { flex: 0 0 auto; color: var(--muted); cursor: grab; touch-action: none; display: inline-flex; padding: 4px; }
 /* カテゴリー追加: 色のプリセット選択 */
 .color-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.color-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.color-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
 .color-swatch.active { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--ink); }
+
+/* 学習ノート: 部分装飾つきリッチテキスト本文 */
+.note-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.note-body {
+  min-height: 180px; max-height: 50vh; overflow-y: auto;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px; font-size: 14.5px; line-height: 1.7; outline: none;
+}
+.note-body:focus { border-color: var(--accent); }
+.note-body div { min-height: 1.4em; }
 
 /* タスク詳細モーダルの情報表示 */
 .td-info { margin-top: 6px; }
