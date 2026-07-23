@@ -1236,8 +1236,9 @@ VIEWS.money = {
     const incomeRows = groupByCat(confirmedTxs.filter((t) => t.type === "income"));
     const expenseRows = groupByCat(confirmedTxs.filter((t) => t.type === "expense"));
 
-    // ブロックを上から順に計算。残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
-    let running = fin.currentBalance;
+    // ブロックを上から順に計算。起点は確定残高(残高+未収-引き落とし予定)。
+    // 残高チェックポイントはその時点までの累計をそのまま表示する（＝一個上の内容を引き継ぐ）
+    let running = fin.projectedBalance;
     const blocksHtml = DB.budgetplan.blocks.map((b) => {
       if (b.type === "balance") {
         return `<button type="button" class="flat-row" data-block-open="${b.id}">
@@ -1312,21 +1313,17 @@ VIEWS.money = {
       <div class="section">
         <p class="section-title" style="margin-top:16px">${icon("layers", 15)} 全期間の収支</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;padding:2px 0 14px">
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入合計（未収を含む）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.totalIncome)}</p></div>
-          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出合計（引き落とし予定を含む）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.totalExpense)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">収入合計（未収のみ）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--accent)">${fmtYen(fin.pendingIncome)}</p></div>
+          <div><p class="small" style="color:var(--muted);margin:0 0 4px">支出合計（引き落とし予定のみ）</p><p style="margin:0;font-size:16px;white-space:nowrap;font-weight:800;color:var(--red)">${fmtYen(fin.pendingExpense)}</p></div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:14px">
-          <p class="small" style="color:var(--muted);margin:0 0 4px">最終予想残高（未収・引き落とし予定をすべて反映）</p>
+          <p class="small" style="color:var(--muted);margin:0 0 4px">確定残高（残高＋未収−引き落とし予定）</p>
           <p class="section-highlight" style="margin-bottom:8px;color:${fin.projectedBalance < 0 ? "var(--red)" : "var(--ink)"}">${signedYen(fin.projectedBalance)}</p>
         </div>
       </div>
       </div>
-      <p class="small" style="color:var(--muted);margin:16px 0 16px">ここから下は手動で予想を組み立てるシミュレーションです。ブロックを自由に追加して、時系列で予想の収支を組み立てられます。</p>
+      <p class="small" style="color:var(--muted);margin:16px 0 16px">ここから下は手動で予想を組み立てるシミュレーションです。上の確定残高を起点に、ブロックを自由に追加して時系列で予想の収支を組み立てられます。</p>
       <div class="section-list">
-      <div class="section">
-        <p class="section-title" style="margin-top:16px">${icon("wallet", 15)} 現在の残高</p>
-        <p class="section-highlight" style="margin-bottom:18px">${signedYen(fin.currentBalance)}</p>
-      </div>
       ${blocksHtml}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">

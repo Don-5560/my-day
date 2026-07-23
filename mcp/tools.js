@@ -701,7 +701,8 @@ export async function callTool(name, args = {}) {
     case "get_budget_plan": {
       const [budgetDoc, fin] = await Promise.all([store.getDoc("budgetplan"), store.financeSummary()]);
       const blocks = budgetDoc?.blocks ?? [];
-      let running = fin.currentBalance;
+      // 起点は確定残高(残高+未収-引き落とし予定)。ここから手動ブロックを積み上げる。
+      let running = fin.projectedBalance;
       const out = blocks.map((b) => {
         if (b.type === "balance") {
           return { id: b.id, type: "balance", title: b.title || "予想残高", runningBalance: running };
@@ -721,7 +722,14 @@ export async function callTool(name, args = {}) {
           })),
         };
       });
-      return { currentBalance: fin.currentBalance, blocks: out, finalProjectedBalance: running };
+      return {
+        currentBalance: fin.currentBalance,
+        confirmedBalance: fin.projectedBalance,
+        pendingIncome: fin.pendingIncome,
+        pendingExpense: fin.pendingExpense,
+        blocks: out,
+        finalProjectedBalance: running,
+      };
     }
 
     case "get_employers": {
