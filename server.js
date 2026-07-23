@@ -14,6 +14,7 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import * as store from "./lib/store.js";
 import { makeToken, verifyToken, checkPassword, warnIfInsecure } from "./lib/auth.js";
 import { TOOLS, callTool } from "./mcp/tools.js";
+import * as icloud from "./lib/icloud.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -304,6 +305,68 @@ app.get("/api/creditcard-pending", wrap(async (req, res) => {
 }));
 app.delete("/api/transactions/:id", wrap(async (req, res) => {
   res.json(await store.removeTransaction(req.params.id));
+}));
+
+// --- iCloudカレンダー連携（読み取り専用。CalDAV経由でiPhoneの標準カレンダーの予定を取得する） ---
+// アプリ用パスワードを含むため、汎用の /api/data/:key ではなく専用エンドポイントで扱う（store.getIcloudAuth経由）。
+let icloudEventsCache = null; // { key, at, items } 短時間だけキャッシュしてiCloudへの連打を避ける
+app.post("/api/icloud/connect", wrap(async (req, res) => {
+  const appleId = String(req.body?.appleId || "").trim();
+  const appPassword = String(req.body?.appPassword || "").trim();
+  if (!appleId || !appPassword) throw new Error("Apple IDとアプリ用パスワードを入力してください");
+  let calendars;
+  try {
+    calendars = await icloud.listCalendars(appleId, appPassword);
+  } catch (e) {
+    throw new Error("iCloudへの接続に失敗しました。Apple IDとアプリ用パスワード（通常のパスワードではなく appleid.apple.com で発行するもの）を確認してください");
+  }
+  await store.setIcloudAuth({ appleId, appPassword, calendars, enabledUrls: calendars.map((c) => c.url) });
+  icloudEventsCache = null;
+  res.json({ ok: true, appleId, calendars: calendars.map((c) => ({ ...c, enabled: true })) });
+}));
+app.get("/api/icloud/status", wrap(async (req, res) => {
+  const auth = await store.getIcloudAuth();
+  if (!auth) return res.json({ connected: false });
+  const enabled = new Set(auth.enabledUrls || (auth.calendars || []).map((c) => c.url));
+  res.json({
+    connected: true,
+    appleId: auth.appleId,
+    calendars: (auth.calendars || []).map((c) => ({ ...c, enabled: enabled.has(c.url) })),
+  });
+}));
+app.put("/api/icloud/calendars", wrap(async (req, res) => {
+  const auth = await store.getIcloudAuth();
+  if (!auth) throw new Error("iCloudが接続されていません");
+  auth.enabledUrls = Array.isArray(req.body?.enabledUrls) ? req.body.enabledUrls : [];
+  await store.setIcloudAuth(auth);
+  icloudEventsCache = null;
+  res.json({ ok: true });
+}));
+app.delete("/api/icloud/disconnect", wrap(async (req, res) => {
+  await store.clearIcloudAuth();
+  icloudEventsCache = null;
+  res.json({ ok: true });
+}));
+// 指定期間の予定を取得。5分だけメモリキャッシュ（同じ期間の連続リクエストでiCloudに毎回叩きにいかない）
+app.get("/api/icloud/events", wrap(async (req, res) => {
+  const auth = await store.getIcloudAuth();
+  if (!auth) return res.json({ connected: false, items: [] });
+  const from = req.query.from || store.today();
+  const to = req.query.to || from;
+  const key = `${from}|${to}|${(auth.enabledUrls || []).join(",")}`;
+  if (icloudEventsCache && icloudEventsCache.key === key && Date.now() - icloudEventsCache.at < 5 * 60 * 1000) {
+    return res.json({ connected: true, items: icloudEventsCache.items });
+  }
+  const fromIso = new Date(from + "T00:00:00").toISOString();
+  const toIso = new Date(to + "T23:59:59").toISOString();
+  let items;
+  try {
+    items = await icloud.fetchEvents(auth.appleId, auth.appPassword, auth.enabledUrls, fromIso, toIso);
+  } catch (e) {
+    return res.json({ connected: true, items: [], error: "iCloudから予定を取得できませんでした" });
+  }
+  icloudEventsCache = { key, at: Date.now(), items };
+  res.json({ connected: true, items });
 }));
 
 // AIに貼り付ける用のMarkdown

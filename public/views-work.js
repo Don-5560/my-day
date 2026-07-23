@@ -1714,15 +1714,21 @@ VIEWS.calendar = {
     const [from, to] = calRange();
     // 先にグリッドの枠を即描画（日付・XPヒートはローカルデータだけで出せる）。
     // タスク件数・予定は days の取得後に埋めるので、空白の「読み込み中…」が出ない。
-    CAL._from = from; CAL._to = to; CAL._map = {};
+    CAL._from = from; CAL._to = to; CAL._map = {}; CAL._ical = {};
     calRefreshBody();
 
-    let map;
-    try { map = await calLoadDays(from, to); }
-    catch (e) { $("#calBody").innerHTML = `<p class="empty">読み込み失敗: ${esc(e.message)}</p>`; return; }
+    let map, icalEvents;
+    try {
+      [map, icalEvents] = await Promise.all([calLoadDays(from, to), fetchIcloudEvents(from, to)]);
+    } catch (e) { $("#calBody").innerHTML = `<p class="empty">読み込み失敗: ${esc(e.message)}</p>`; return; }
     if (CURRENT !== "calendar") return;
 
     CAL._map = map;
+    CAL._ical = {};
+    for (const ev of icalEvents) {
+      const iso = ev.start.slice(0, 10);
+      (CAL._ical[iso] ||= []).push(ev);
+    }
     calRefreshBody(); // タスク件数・予定を反映
     if (CAL._openIso && CAL._openIso >= from && CAL._openIso <= to) calShowDetail(CAL._openIso);
   },
@@ -1747,11 +1753,13 @@ function calRenderMonth(el) {
     const done = day ? day.tasks.filter((t) => t.done).length : 0;
     const total = day ? day.tasks.length : 0;
     const hasMit = day ? day.tasks.some((t) => t.important) : false;
+    const hasIcal = !!(CAL._ical?.[iso]?.length);
     const lv = calLevel(calXp(iso));
     const cls = ["cal-cell", d.getMonth() !== anchorMonth ? "other" : "", iso === today ? "today" : ""].join(" ");
     cells += `<button class="${cls}" data-day="${iso}">
       <span class="cc-num">${d.getDate()}</span>
       ${hasMit ? `<span class="cc-star">${icon("star", 11, "filled")}</span>` : ""}
+      ${hasIcal ? `<span class="cc-star" style="top:4px;right:${hasMit ? "20px" : "5px"};color:var(--violet)">${icon("calendar", 11)}</span>` : ""}
       ${lv ? `<span class="cc-dot hm-${lv}"></span>` : ""}
       ${total ? `<span class="cc-count">${done}/${total}</span>` : ""}
     </button>`;
@@ -1779,18 +1787,27 @@ function calRenderTime(el, from, to) {
   const cols = days.map((iso) => {
     const d = new Date(iso + "T00:00:00"), day = map[iso], tasks = day ? day.tasks : [];
     const timed = tasks.filter(isTimed), allday = tasks.filter((t) => !isTimed(t));
+    const icalDay = CAL._ical?.[iso] || [];
+    const icalTimed = icalDay.filter((e) => !e.allDay), icalAllday = icalDay.filter((e) => e.allDay);
     const blocks = timed.map((t) => {
       const [hh, mm] = t.time.split(":").map(Number);
       const top = Math.max(0, (hh - H0 + mm / 60) * rowH);
       const col = t.cat ? (CAT_COLORS[t.cat] || "var(--accent)") : "var(--accent)";
       return `<button class="cal-ev ${t.done ? "done" : ""}" data-ev="${iso}" style="top:${top}px;border-left-color:${col}"><b>${esc(t.time)}</b>${esc(t.title)}</button>`;
     }).join("");
+    // iCloudの予定は読み取り専用（タップ不可・LifeOSタスクとは紫で区別）
+    const icalBlocks = icalTimed.map((e) => {
+      const t = new Date(e.start);
+      const top = Math.max(0, (t.getHours() - H0 + t.getMinutes() / 60) * rowH);
+      return `<div class="cal-ev ical-ev" style="top:${top}px;border-left-color:var(--violet)"><b>${esc(t.toTimeString().slice(0, 5))}</b>${icon("calendar", 10)} ${esc(e.title)}</div>`;
+    }).join("");
     return `<div class="cal-col">
       <div class="cal-colhead ${iso === today ? "today" : ""}">${WD_JP[d.getDay()]}<b>${d.getDate()}</b></div>
-      <div class="cal-allday">${allday.map((t) => `<button class="cal-chip ${t.done ? "done" : ""}" data-ev="${iso}">${esc(t.title)}</button>`).join("")}</div>
+      <div class="cal-allday">${allday.map((t) => `<button class="cal-chip ${t.done ? "done" : ""}" data-ev="${iso}">${esc(t.title)}</button>`).join("")}${icalAllday.map((e) => `<span class="cal-chip ical-ev">${icon("calendar", 10)} ${esc(e.title)}</span>`).join("")}</div>
       <div class="cal-colbody" style="height:${bodyH}px">
         ${hours.map((h, i) => `<div class="cal-hline" style="top:${i * rowH}px"></div>`).join("")}
         ${blocks}
+        ${icalBlocks}
       </div></div>`;
   }).join("");
 
@@ -1821,7 +1838,13 @@ function calShowDetail(iso) {
         <div class="li-title">${t.important ? `<span style="color:var(--amber)">${icon("star", 13, "filled")}</span> ` : ""}${esc(t.title)}</div>${t.memo ? `<div class="li-memo">${esc(t.memo)}</div>` : ""}
       </div>
       ${t.spentMin ? `<span class="pill grn">${icon("timer", 10)} ${fmtHM(t.spentMin)}</span>` : ""}
-    </div>`).join("") || '<p class="empty">この日のタスクはありません</p>'}</div>
+    </div>`).join("") || '<p class="empty">この日のタスクはありません</p>'}${(CAL._ical?.[iso] || []).map((e) => `<div class="list-item">
+      <span class="li-time">${e.allDay ? "終日" : esc(new Date(e.start).toTimeString().slice(0, 5))}</span>
+      <div class="li-body">
+        <div class="li-title">${icon("calendar", 12)} ${esc(e.title)}</div>
+        <div class="li-tags"><span class="pill vio">${esc(e.calendarName)}</span></div>
+      </div>
+    </div>`).join("")}</div>
     ${day?.diary ? `<p class="small" style="white-space:pre-wrap;margin:12px 0 0;color:var(--muted)">${esc(day.diary)}</p>` : ""}`;
 
   const refresh = (updatedDay) => { CAL._map[iso] = updatedDay; if (iso === todayStr()) DB.day = updatedDay; calRefreshBody(); calShowDetail(iso); };
@@ -1986,7 +2009,7 @@ async function templateModal(initial = {}) {
 let CAT_TAB = "expense"; // "expense" | "income"
 let CAT_EDIT = false;    // 編集モード（削除ボタン＋並べ替えハンドルを表示）
 // 設定ページのセクション開閉状態（アコーディオン）。初期は全部開いた状態にする
-const SETTINGS_OPEN = new Set(["profile", "goals", "tasks", "employers", "creditCards", "data", "account"]);
+const SETTINGS_OPEN = new Set(["profile", "goals", "tasks", "icloud", "employers", "creditCards", "data", "account"]);
 
 // リストの並べ替え（タッチ/マウス両対応）。ハンドルをドラッグして順序を入れ替える。
 function makeSortable(listEl, handleSel, itemSel, onReorder) {
@@ -2170,10 +2193,11 @@ VIEWS.categories = {
 VIEWS.settings = {
   title: "設定", icon: "settings",
   async render(main) {
-    let tplDoc, empPending, cardPending;
+    let tplDoc, empPending, cardPending, icloudStatus;
     try { tplDoc = await api("/api/templates"); } catch (e) { tplDoc = { recurring: [] }; }
     try { empPending = await api("/api/employer-pending"); } catch (e) { empPending = []; }
     try { cardPending = await api("/api/creditcard-pending"); } catch (e) { cardPending = []; }
+    try { icloudStatus = await api("/api/icloud/status"); } catch (e) { icloudStatus = { connected: false }; }
     const recurring = tplDoc.recurring || [];
     await ensureCategoriesMigrated();
     await ensureUberEmployerMigrated();
@@ -2216,6 +2240,25 @@ VIEWS.settings = {
       ${sec("tasks", "毎日の定番タスク", "check", `
         <div id="tplList">${templateListHTML(recurring)}</div>
         <button class="btn ghost sm" id="tplAdd" style="margin-top:10px">${icon("plus", 13)} 定番タスクを追加</button>
+      `)}
+      ${sec("icloud", "iPhoneカレンダー連携", "calendar", icloudStatus.connected ? `
+        <p class="small" style="color:var(--muted);margin:0 0 12px">接続中: ${esc(icloudStatus.appleId)}</p>
+        <div id="icloudCalList">
+          ${(icloudStatus.calendars || []).map((c) => `
+            <label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">
+              <input type="checkbox" class="checkbox" data-ical-cal="${esc(c.url)}" ${c.enabled ? "checked" : ""}>
+              <span style="flex:1">${esc(c.name)}</span>
+            </label>`).join("") || '<p class="empty">カレンダーが見つかりませんでした</p>'}
+        </div>
+        <div style="margin-top:12px"><button class="btn ghost sm" id="icloudDisconnect">${icon("logout", 13)} 連携を解除</button></div>
+      ` : `
+        <p class="small" style="color:var(--muted);margin:0 0 10px">iPhone標準カレンダーの予定を、今日の予定・カレンダーページに読み取り専用で表示します（LifeOS側からは編集できません）。</p>
+        <p class="hint" style="margin:0 0 12px">通常のApple IDパスワードではなく、<a href="https://appleid.apple.com" target="_blank" rel="noopener" style="color:var(--accent)">appleid.apple.com</a>で発行する「アプリ用パスワード」を入力してください。</p>
+        <label class="f-label">Apple ID（メールアドレス）</label>
+        <input type="text" id="icloudId" placeholder="example@icloud.com" autocomplete="off">
+        <label class="f-label">アプリ用パスワード</label>
+        <input type="password" id="icloudPw" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="off">
+        <div style="margin-top:14px"><button class="btn" id="icloudConnect">${icon("checkline", 14)} 接続</button></div>
       `)}
       <div class="section">
         <button type="button" class="section-head" id="catManageCard">
@@ -2302,6 +2345,29 @@ VIEWS.settings = {
       };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+
+    // iPhoneカレンダー連携
+    $("#icloudConnect")?.addEventListener("click", async () => {
+      const appleId = $("#icloudId").value.trim();
+      const appPassword = $("#icloudPw").value.trim();
+      if (!appleId || !appPassword) return toast("Apple IDとアプリ用パスワードを入力してください", "x");
+      try {
+        await api("/api/icloud/connect", { method: "POST", body: JSON.stringify({ appleId, appPassword }) });
+        toast("接続しました");
+        rerender();
+      } catch (e) { toast(e.message, "x"); }
+    });
+    $$("[data-ical-cal]", main).forEach((cb) => cb.addEventListener("change", async () => {
+      const enabledUrls = $$("[data-ical-cal]", main).filter((x) => x.checked).map((x) => x.dataset.icalCal);
+      try { await api("/api/icloud/calendars", { method: "PUT", body: JSON.stringify({ enabledUrls }) }); toast("更新しました"); }
+      catch (e) { toast(e.message, "x"); }
+    }));
+    $("#icloudDisconnect")?.addEventListener("click", async () => {
+      if (!(await confirmBox("iCloudカレンダー連携を解除しますか？"))) return;
+      await api("/api/icloud/disconnect", { method: "DELETE" });
+      toast("解除しました");
+      rerender();
     });
 
     // カテゴリー管理ページへ

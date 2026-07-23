@@ -63,6 +63,24 @@ function priPill(pri) {
   if (pri === "低") return `<span class="pill">低</span>`;
   return "";
 }
+// iCloudカレンダーの予定を取得（未接続・失敗時は静かに空配列を返す。読み取り専用表示にしか使わない）
+async function fetchIcloudEvents(from, to) {
+  try {
+    const r = await api(`/api/icloud/events?from=${from}&to=${to}`);
+    return r.items || [];
+  } catch { return []; }
+}
+// iCloudの予定1行のHTML（読み取り専用・タップ不可。LifeOSのタスクと区別できるよう紫のカテゴリー色にする）
+function icloudEventHTML(ev) {
+  const timeLabel = ev.allDay ? "終日" : new Date(ev.start).toTimeString().slice(0, 5);
+  return `<div class="sched-item ical-item" style="--cat:var(--violet)">
+    <div class="sched-time"><span class="st-start">${esc(timeLabel)}</span></div>
+    <div class="li-body">
+      <div class="li-title">${icon("calendar", 12)} ${esc(ev.title)}</div>
+      <div class="li-tags"><span class="pill vio">${esc(ev.calendarName)}</span></div>
+    </div>
+  </div>`;
+}
 // 予定カード1行のHTML。タイマーボタンは今日のみ表示。
 function schedItemHTML(t, isToday) {
   const catCol = t.cat ? (CAT_COLORS[t.cat] || "var(--muted)") : "var(--line)";
@@ -441,12 +459,19 @@ VIEWS.home = {
       if (!card) return;
       const date = SCHED_DATE || todayStr();
       const isToday = date === todayStr();
-      let day;
+      let day, icalEvents;
       try {
-        day = isToday ? DB.day : (SCHED_CACHE[date] || (SCHED_CACHE[date] = await api("/api/day?date=" + date)));
+        [day, icalEvents] = await Promise.all([
+          isToday ? DB.day : (SCHED_CACHE[date] || (SCHED_CACHE[date] = await api("/api/day?date=" + date))),
+          fetchIcloudEvents(date, date),
+        ]);
       } catch (err) { card.innerHTML = `<p class="empty">読み込み失敗: ${esc(err.message)}</p>`; return; }
       if ((SCHED_DATE || todayStr()) !== date) return; // 取得中に日付が変わっていたら破棄
       const tasks = [...day.tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+      const rows = [
+        ...tasks.map((t) => ({ time: t.time || "99:99", html: schedItemHTML(t, isToday) })),
+        ...icalEvents.map((ev) => ({ time: ev.allDay ? "00:00" : new Date(ev.start).toTimeString().slice(0, 5), html: icloudEventHTML(ev) })),
+      ].sort((a, b) => a.time.localeCompare(b.time));
       card.innerHTML = `
         <div class="card-head sched-head">
           <button class="icon-btn" data-day="prev" aria-label="前の日（過去）">${icon("chevR", 16, "flip")}</button>
@@ -454,7 +479,7 @@ VIEWS.home = {
           <button class="icon-btn" data-day="next" aria-label="次の日（未来）">${icon("chevR", 16)}</button>
         </div>
         ${isToday ? "" : `<div class="sched-back"><button class="btn ghost sm" data-day="today">${icon("rotate", 13)} 今日に戻る</button></div>`}
-        <div id="schedule" class="sched">${tasks.map((t) => schedItemHTML(t, isToday)).join("") || `<p class="empty">${isToday ? "今日の予定はまだありません。「追加」から入れましょう。" : "この日の予定はありません。"}</p>`}</div>`;
+        <div id="schedule" class="sched">${rows.map((r) => r.html).join("") || `<p class="empty">${isToday ? "今日の予定はまだありません。「追加」から入れましょう。" : "この日の予定はありません。"}</p>`}</div>`;
 
       // 日移動（矢印）
       $$("[data-day]", card).forEach((b) => b.addEventListener("click", () => {
