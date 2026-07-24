@@ -473,12 +473,20 @@ button.greet-goal {
   color: var(--ink); padding: 0; margin-bottom: 12px;
 }
 .note-page-title::placeholder { color: var(--faint); }
+.note-page-title:empty::before { content: attr(data-placeholder); color: var(--faint); }
 .note-breadcrumb { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
 .note-page-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .note-sheet .note-page-meta input, .note-sheet .note-page-meta select {
   border: none; background: var(--surface-2); border-radius: 8px;
   padding: 5px 10px; font-size: 12.5px; color: var(--muted); width: auto; min-width: 0;
 }
+/* タイトル/分/タグはiOSの「複数input」検知によるキーボード上部の前へ/次へバーを避けるため
+   contenteditableで作る（inputだと数が多いほどあのバーが出やすくなる、という実機での見え方に合わせた対策） */
+.note-sheet .note-page-meta [contenteditable] {
+  border: none; background: var(--surface-2); border-radius: 8px;
+  padding: 5px 10px; font-size: 12.5px; color: var(--muted); width: auto; min-width: 0; outline: none;
+}
+.note-page-meta [contenteditable]:empty::before { content: attr(data-placeholder); color: var(--faint); }
 /* ブロック単位の本文（Notionのような/コマンド・ドラッグ並び替え対応） */
 .note-blocks { min-height: 30vh; }
 .note-block { display: flex; align-items: flex-start; gap: 2px; position: relative; }

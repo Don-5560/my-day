@@ -892,12 +892,12 @@ function studyNoteEditor(note, subjects) {
       </div>
       <div class="note-sheet-body">
         ${note.parentId ? `<div class="note-breadcrumb">${icon("file", 12)} ${esc(DB.study.logs.find((x) => x.id === note.parentId)?.title || "無題のページ")}</div>` : ""}
-        <input type="text" id="noteTitle" class="note-page-title" placeholder="タイトルなし" value="${esc(note.title || "")}">
+        <div id="noteTitle" class="note-page-title" contenteditable="true" data-placeholder="タイトルなし">${esc(note.title || "")}</div>
         <div class="note-page-meta">
           <input type="date" id="noteDate" value="${esc(note.date || todayStr())}">
           <select id="noteSubject">${subjOptions.map((s) => `<option ${s === note.subject ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-          <input type="number" id="noteMin" value="${note.min || ""}" placeholder="分" style="width:64px">
-          <input type="text" id="noteTags" value="${esc((note.tags || []).join(", "))}" placeholder="#タグ（カンマ区切り）" style="flex:1;min-width:120px">
+          <div id="noteMin" contenteditable="true" inputmode="numeric" data-placeholder="分" style="width:64px">${note.min || ""}</div>
+          <div id="noteTags" contenteditable="true" data-placeholder="#タグ（カンマ区切り）" style="flex:1;min-width:120px">${esc((note.tags || []).join(", "))}</div>
         </div>
         <div id="noteBlocks" class="note-blocks">${initialBlocks.map(noteBlockRowHTML).join("")}</div>
       </div>
@@ -922,6 +922,16 @@ function studyNoteEditor(note, subjects) {
     };
     $$("[data-x]", wrap).forEach((b) => b.addEventListener("click", () => close(null)));
     renumberNoteBlocks($("#noteBlocks", wrap));
+
+    // タイトル/分/タグは単一行のcontenteditable: 改行禁止・貼り付けはプレーンテキストのみ許可
+    [$("#noteTitle", wrap), $("#noteMin", wrap), $("#noteTags", wrap)].forEach((el) => {
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); el.blur(); } });
+      el.addEventListener("paste", (e) => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+        document.execCommand("insertText", false, text);
+      });
+    });
 
     // ===== ブロック編集 =====
     const blocksEl = $("#noteBlocks", wrap);
@@ -1394,8 +1404,8 @@ function studyNoteEditor(note, subjects) {
     }
     // 現在の入力内容をノート保存用のオブジェクトにまとめる（完了ボタンとページ間の移動の両方から使う）
     function collectDraft() {
-      const title = $("#noteTitle", wrap).value.trim();
-      const min = Number($("#noteMin", wrap).value) || 0;
+      const title = $("#noteTitle", wrap).textContent.trim();
+      const min = Number($("#noteMin", wrap).textContent.replace(/[^\d]/g, "")) || 0;
       const blocks = $$(".note-block", blocksEl).map((row) => {
         const type = row.dataset.type;
         if (type === "divider") return { id: row.dataset.block, type, html: "" };
@@ -1437,7 +1447,7 @@ function studyNoteEditor(note, subjects) {
         date: $("#noteDate", wrap).value || todayStr(),
         subject: $("#noteSubject", wrap).value,
         min,
-        tags: $("#noteTags", wrap).value.split(/[,、]/).map((s) => s.trim()).filter(Boolean),
+        tags: $("#noteTags", wrap).textContent.split(/[,、]/).map((s) => s.trim()).filter(Boolean),
         links: note.links || (note.link ? [note.link] : []),
         parentId: note.parentId,
         body: bodyHtml,
