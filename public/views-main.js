@@ -1288,10 +1288,15 @@ function studyNoteEditor(note, subjects) {
       const outerH = toolbarOuter.offsetHeight || 60;
       toolbarOuter.style.top = Math.max(0, window.innerHeight - used - outerH) + "px";
     }
-    // キーボードの高さが変わった時だけ再計算する（スクロール中は動かさない＝「後追い」させない）
+    // visualViewportのresize/scrollで再計算する。resizeはキーボードの高さが変わった時、
+    // scrollは「入力中カーソルが隠れないようiOSがページ全体を自動でパンする」時に発生し、
+    // どちらもキーボードの実際の位置に追従するために必要（ページ座標に固定されないようにする）。
+    // これはノート本文（内側のoverflow:auto領域）を手でスクロールしても発生しないので、
+    // 本文スクロール時にバーがガクつく問題（position:absoluteへの変更で対処済み）とは無関係。
     vvResizeHandler = () => updateToolbarPosition();
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", vvResizeHandler);
+      window.visualViewport.addEventListener("scroll", vvResizeHandler);
     }
     // キーボードのスライドアニメーションが終わるまで高さが確定しないことがあるため、
     // フォーカス直後は少し間隔をあけて何度か位置を計算し直し、最終的な高さに合わせる
