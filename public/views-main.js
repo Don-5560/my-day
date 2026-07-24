@@ -742,6 +742,7 @@ const NOTE_BLOCK_TYPES = [
   { type: "callout", label: "コールアウト", glyph: "💡" },
   { type: "code", label: "コード", glyph: "<>" },
   { type: "image", label: "画像", glyph: "🖼" },
+  { type: "page", label: "ページ", glyph: "📄" },
   { type: "divider", label: "区切り線", glyph: "—" },
 ];
 
@@ -761,6 +762,7 @@ const NOTE_PICKER_CATEGORIES = [
       { type: "toggle", label: "トグルリスト", glyph: "▸" },
       { type: "callout", label: "コールアウト", glyph: "💡" },
       { type: "quote", label: "引用", glyph: "❝" },
+      { type: "page", label: "ページ", glyph: "📄" },
       { type: "divider", label: "区切り線", glyph: "—" },
     ],
   },
@@ -808,6 +810,15 @@ function noteBlockRowHTML(b) {
           ? `<img src="${esc(b.url)}" class="note-image-img" alt="">`
           : `<div class="note-image-empty">${icon("image", 18)}<input type="url" class="note-image-url" placeholder="画像URLを入力してEnter"></div>`}
       </div>
+      <button type="button" class="icon-btn danger note-block-del" data-block-del>${icon("x", 14)}</button>
+    </div>`;
+  }
+  if (b.type === "page") {
+    const child = DB.study.logs.find((x) => x.id === b.pageId);
+    const title = child?.title || "無題のページ";
+    return `<div class="note-block type-page" data-block="${b.id}" data-type="page" data-page-id="${esc(b.pageId || "")}">
+      <span class="note-block-handle" data-drag>${icon("grip", 14)}</span>
+      <button type="button" class="note-page-link" data-page-open>${icon("file", 15)}<span>${esc(title)}</span>${icon("chevR", 13)}</button>
       <button type="button" class="icon-btn danger note-block-del" data-block-del>${icon("x", 14)}</button>
     </div>`;
   }
@@ -880,6 +891,7 @@ function studyNoteEditor(note, subjects) {
         <button type="button" class="btn sm" id="noteSave">${icon("checkline", 14)} 完了</button>
       </div>
       <div class="note-sheet-body">
+        ${note.parentId ? `<div class="note-breadcrumb">${icon("file", 12)} ${esc(DB.study.logs.find((x) => x.id === note.parentId)?.title || "無題のページ")}</div>` : ""}
         <input type="text" id="noteTitle" class="note-page-title" placeholder="タイトルなし" value="${esc(note.title || "")}">
         <div class="note-page-meta">
           <input type="date" id="noteDate" value="${esc(note.date || todayStr())}">
@@ -957,6 +969,20 @@ function studyNoteEditor(note, subjects) {
       else focusTextEl(newRow);
     };
 
+    // ページ内ページ（サブページ）を新規作成する。親ノートが未保存（idなし）の場合は先に保存してもらう
+    const createChildPage = async () => {
+      if (!note.id) { toast("ページを追加する前に、一度「完了」で保存してください", "x"); return null; }
+      const title = (window.prompt("新しいページのタイトル") || "").trim() || "無題のページ";
+      const child = {
+        id: uid(), createdAt: new Date().toISOString(), src: "manual", parentId: note.id,
+        title, date: todayStr(), subject: note.subject || subjects[0] || "一般", min: 0, tags: [], links: [],
+        body: "", blocks: [{ id: uid(), type: "paragraph", html: "" }],
+      };
+      DB.study.logs.push(child);
+      await saveDb("study");
+      return child.id;
+    };
+
     const openSlashMenu = (row, textEl) => {
       closeSlashMenu();
       slashMenu = document.createElement("div");
@@ -966,11 +992,17 @@ function studyNoteEditor(note, subjects) {
       row.appendChild(slashMenu);
       slashMenu.style.top = row.offsetHeight + "px";
       slashMenu.style.left = "22px";
-      $$("[data-slash-type]", slashMenu).forEach((b) => b.addEventListener("mousedown", (e) => {
+      $$("[data-slash-type]", slashMenu).forEach((b) => b.addEventListener("mousedown", async (e) => {
         e.preventDefault();
         textEl.textContent = "";
         closeSlashMenu();
-        convertBlockType(row, b.dataset.slashType, b.dataset.slashLevel ? { level: Number(b.dataset.slashLevel) } : {});
+        const type = b.dataset.slashType;
+        if (type === "page") {
+          const pageId = await createChildPage();
+          if (pageId) convertBlockType(row, "page", { pageId });
+          return;
+        }
+        convertBlockType(row, type, b.dataset.slashLevel ? { level: Number(b.dataset.slashLevel) } : {});
       }));
     };
 
@@ -1030,6 +1062,21 @@ function studyNoteEditor(note, subjects) {
       if (handle) handle.addEventListener("pointerdown", (e) => { e.preventDefault(); startDrag(row); });
     }
 
+    function bindPageBlock(row) {
+      const openBtn = $("[data-page-open]", row);
+      if (openBtn) openBtn.addEventListener("click", () => {
+        const pageId = row.dataset.pageId;
+        if (!pageId) return;
+        const draft = collectDraft();
+        delete draft.__invalid;
+        close({ ...draft, __navigateTo: pageId });
+      });
+      const delBtn = $("[data-block-del]", row);
+      if (delBtn) delBtn.addEventListener("click", () => removeBlock(row));
+      const handle = $("[data-drag]", row);
+      if (handle) handle.addEventListener("pointerdown", (e) => { e.preventDefault(); startDrag(row); });
+    }
+
     function bindToggleBlock(row) {
       const summary = $(".note-toggle-summary", row);
       const body = $(".note-toggle-body", row);
@@ -1061,6 +1108,7 @@ function studyNoteEditor(note, subjects) {
     function bindBlockRow(row) {
       const type = row.dataset.type;
       if (type === "image") { bindImageBlock(row); return; }
+      if (type === "page") { bindPageBlock(row); return; }
       if (type === "toggle") { bindToggleBlock(row); return; }
       const textEl = $(".note-block-text", row);
       if (textEl) {
@@ -1189,7 +1237,10 @@ function studyNoteEditor(note, subjects) {
         <span>${esc(it.label)}</span>
       </button>`;
     const pickerHTML = () => {
-      const cats = pickerMode === "turnInto" ? [NOTE_PICKER_CATEGORIES[0]] : NOTE_PICKER_CATEGORIES;
+      // 「種類を変換」では既存ブロックをその場で置き換えるだけなので、非同期の作成処理が要る「ページ」は対象外にする
+      const cats = pickerMode === "turnInto"
+        ? [{ ...NOTE_PICKER_CATEGORIES[0], items: NOTE_PICKER_CATEGORIES[0].items.filter((it) => it.type !== "page") }]
+        : NOTE_PICKER_CATEGORIES;
       return cats.map((cat) => `
         <div class="note-picker-cat-label">${esc(cat.label)}</div>
         <div class="note-picker-grid">${cat.items.map(pickerItemHTML).join("")}</div>`).join("");
@@ -1243,10 +1294,19 @@ function studyNoteEditor(note, subjects) {
     }
     setToolbarMode("keyboard");
 
-    function handlePickerChoice(btn) {
+    async function handlePickerChoice(btn) {
       const type = btn.dataset.pickerType;
       const level = btn.dataset.pickerLevel ? Number(btn.dataset.pickerLevel) : undefined;
       if (type === "soon") { toast("この機能は近日対応予定です", "clock"); return; }
+      if (type === "page") {
+        const pageId = await createChildPage();
+        setToolbarMode("keyboard");
+        if (!pageId) return;
+        const target = activeRow || lastBlockRow();
+        const newRow = insertBlockAfter(target, "page", "", { pageId });
+        activeRow = newRow;
+        return;
+      }
       const extra = level ? { level } : {};
       const target = activeRow || lastBlockRow();
       if (pickerMode === "turnInto") {
@@ -1332,12 +1392,14 @@ function studyNoteEditor(note, subjects) {
         if (await confirmBox("このノートを削除しますか？")) close({ __delete: true });
       });
     }
-    $("#noteSave", wrap).addEventListener("click", () => {
+    // 現在の入力内容をノート保存用のオブジェクトにまとめる（完了ボタンとページ間の移動の両方から使う）
+    function collectDraft() {
       const title = $("#noteTitle", wrap).value.trim();
       const min = Number($("#noteMin", wrap).value) || 0;
       const blocks = $$(".note-block", blocksEl).map((row) => {
         const type = row.dataset.type;
         if (type === "divider") return { id: row.dataset.block, type, html: "" };
+        if (type === "page") return { id: row.dataset.block, type, pageId: row.dataset.pageId };
         if (type === "image") {
           const img = $(".note-image-img", row);
           return { id: row.dataset.block, type, url: img ? img.getAttribute("src") : "" };
@@ -1359,28 +1421,77 @@ function studyNoteEditor(note, subjects) {
         if (type === "heading") out.level = Number(row.dataset.level) || 1;
         if (type === "callout") out.emoji = $("[data-callout-emoji]", row)?.textContent.trim() || "💡";
         return out;
-      }).filter((b) => b.type === "divider" || b.type === "image" || stripHtmlPreview(b.html, 1) || (b.type === "toggle" && stripHtmlPreview(b.childHtml, 1)));
+      }).filter((b) => b.type === "divider" || b.type === "image" || b.type === "page" || stripHtmlPreview(b.html, 1) || (b.type === "toggle" && stripHtmlPreview(b.childHtml, 1)));
       const bodyHtml = blocks.map((b) => {
         if (b.type === "divider") return "<div>ーーーーー</div>";
+        if (b.type === "page") { const child = DB.study.logs.find((x) => x.id === b.pageId); return `<div>📄 ${esc(child?.title || "無題のページ")}</div>`; }
         if (b.type === "image") return b.url ? `<div>🖼 ${esc(b.url)}</div>` : "";
         if (b.type === "toggle") return `<div>▸ ${b.html}</div><div>${b.childHtml}</div>`;
         const prefix = b.type === "bulleted" ? "• " : b.type === "checkbox" ? (b.checked ? "☑ " : "☐ ") : b.type === "quote" ? "❝ " : b.type === "callout" ? `${b.emoji} ` : "";
         return `<div>${prefix}${b.html}</div>`;
       }).join("");
       const bodyText = stripHtmlPreview(bodyHtml, 1);
-      if (!title && !bodyText && !min) { toast("タイトル・本文・分のいずれかを入力してください", "x"); return; }
-      close({
+      return {
+        __invalid: !title && !bodyText && !min,
         title,
         date: $("#noteDate", wrap).value || todayStr(),
         subject: $("#noteSubject", wrap).value,
         min,
         tags: $("#noteTags", wrap).value.split(/[,、]/).map((s) => s.trim()).filter(Boolean),
         links: note.links || (note.link ? [note.link] : []),
+        parentId: note.parentId,
         body: bodyHtml,
         blocks,
-      });
+      };
+    }
+    $("#noteSave", wrap).addEventListener("click", () => {
+      const draft = collectDraft();
+      if (draft.__invalid) { toast("タイトル・本文・分のいずれかを入力してください", "x"); return; }
+      delete draft.__invalid;
+      close(draft);
     });
   });
+}
+
+// studyNoteEditorの保存結果をDB.study.logsに反映する（新規作成 or 既存の更新）
+async function persistNoteDraft(current, draft) {
+  const isNew = !current.id;
+  if (isNew) {
+    Object.assign(current, { id: uid(), createdAt: new Date().toISOString(), src: "manual" }, draft);
+    DB.study.logs.push(current);
+  } else {
+    Object.assign(current, draft);
+  }
+  await saveDb("study");
+  if (isNew) {
+    toast("ノートを保存しました");
+    if (draft.min) await addXP(Math.min(draft.min, 120), "勉強を記録");
+  }
+}
+
+// ノートエディタを開く。ノート内の「ページ」ブロックからさらに別ノートへ入ったり、
+// 閉じて1つ上の階層（親ページ or 一覧）に戻ったりをスタックで管理する（Notionのサブページのような感覚）。
+async function openNoteEditor(note, subjects) {
+  const stack = [note];
+  while (stack.length) {
+    const current = stack[stack.length - 1];
+    const result = await studyNoteEditor(current, subjects);
+    if (result && result.__navigateTo) {
+      const { __navigateTo, ...draft } = result;
+      await persistNoteDraft(current, draft);
+      const child = DB.study.logs.find((x) => x.id === __navigateTo);
+      if (child) stack.push(child);
+      continue;
+    }
+    if (result) {
+      if (result.__delete) {
+        if (current.id) { DB.study.logs = DB.study.logs.filter((x) => x.id !== current.id); await saveDb("study"); }
+      } else {
+        await persistNoteDraft(current, result);
+      }
+    }
+    stack.pop();
+  }
 }
 
 // 「やったことを記録」: 種類を選ぶと、対応する管理ページ（勉強/売上/営業/作品）に自動で記録される
@@ -1759,14 +1870,7 @@ VIEWS.notes = {
       $$("[data-log]", main).forEach((el) => el.addEventListener("click", async () => {
         const l = DB.study.logs.find((x) => x.id === el.dataset.log);
         if (!l) return;
-        const v = await studyNoteEditor(l, subjects);
-        if (!v) return;
-        if (v.__delete) {
-          DB.study.logs = DB.study.logs.filter((x) => x.id !== l.id);
-        } else {
-          Object.assign(l, v);
-        }
-        await saveDb("study");
+        await openNoteEditor(l, subjects);
         $("#noteList", main).innerHTML = noteListHTML(DB.study.logs);
         bindNoteList();
       }));
@@ -1774,12 +1878,7 @@ VIEWS.notes = {
     bindNoteList();
 
     $("#noteAdd").addEventListener("click", async () => {
-      const v = await studyNoteEditor({}, subjects);
-      if (!v) return;
-      DB.study.logs.push({ id: uid(), createdAt: new Date().toISOString(), src: "manual", ...v });
-      await saveDb("study");
-      if (v.min) await addXP(Math.min(v.min, 120), "勉強を記録");
-      toast("ノートを保存しました");
+      await openNoteEditor({}, subjects);
       $("#noteList", main).innerHTML = noteListHTML(DB.study.logs);
       bindNoteList();
     });
@@ -1796,6 +1895,7 @@ VIEWS.notes = {
 // フィルタ済みノート一覧のHTML（新しい順）
 function filteredNotes(logs) {
   return logs.filter((l) => {
+    if (l.parentId) return false; // サブページは親ページの中からのみ開ける（一覧には出さない）
     if (NOTE_FILTER.subject !== "すべて" && l.subject !== NOTE_FILTER.subject) return false;
     if (NOTE_FILTER.tag && !(l.tags || []).some((t) => t.toLowerCase().includes(NOTE_FILTER.tag.toLowerCase()))) return false;
     if (NOTE_FILTER.from && l.date < NOTE_FILTER.from) return false;

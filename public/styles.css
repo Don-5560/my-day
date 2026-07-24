@@ -473,6 +473,7 @@ button.greet-goal {
   color: var(--ink); padding: 0; margin-bottom: 12px;
 }
 .note-page-title::placeholder { color: var(--faint); }
+.note-breadcrumb { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
 .note-page-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .note-sheet .note-page-meta input, .note-sheet .note-page-meta select {
   border: none; background: var(--surface-2); border-radius: 8px;
@@ -527,6 +528,17 @@ button.greet-goal {
 .note-image-img { max-width: 100%; border-radius: 8px; display: block; }
 .note-image-empty { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; color: var(--faint); }
 .note-image-empty input { flex: 1; min-width: 0; border: none; background: none; outline: none; font: inherit; font-size: 14px; color: var(--ink); }
+/* ページ内ページ（サブページへのリンク行） */
+.note-block.type-page { align-items: center; }
+.note-page-link {
+  flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0;
+  border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px;
+  padding: 9px 12px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.note-page-link svg:first-child { flex: 0 0 auto; color: var(--muted); }
+.note-page-link span { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-page-link svg:last-child { flex: 0 0 auto; color: var(--faint); }
+.note-page-link:hover { background: var(--surface); }
 .note-slash-menu {
   position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--line);
   border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; min-width: 190px;
