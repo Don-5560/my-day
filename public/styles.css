@@ -564,8 +564,11 @@ button.greet-goal {
      ここをposition:fixedのままにすると、iOS Safariでは.note-sheet-body（内側のスクロール領域）を
      スクロールした際にfixed要素の位置がズレる既知の不具合があるため避ける。 */
   position: absolute; left: 0; right: 0; top: 0; z-index: 70;
-  display: flex; flex-direction: column; transition: top .08s linear;
+  flex-direction: column;
+  /* 何も入力欄にフォーカスしていない間は完全に非表示。フォーカスしたときだけJSで.visibleを付ける */
+  display: none;
 }
+.note-toolbar-outer.visible { display: flex; }
 .note-toolbar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 2px;
   height: 52px; margin: 0 16px 8px; padding: 0 6px; border-radius: 26px;

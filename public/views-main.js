@@ -916,6 +916,7 @@ function studyNoteEditor(note, subjects) {
         window.visualViewport.removeEventListener("resize", vvResizeHandler);
         window.visualViewport.removeEventListener("scroll", vvResizeHandler);
       }
+      settleTimers.forEach(clearTimeout);
       wrap.innerHTML = "";
       document.body.classList.remove("modal-open");
       resolve(result);
@@ -1010,6 +1011,7 @@ function studyNoteEditor(note, subjects) {
         if (type === "page") {
           const pageId = await createChildPage();
           if (pageId) convertBlockType(row, "page", { pageId });
+          hideToolbar(); // ページ行はフォーカス対象がないので、ここで手放して非表示に戻す
           return;
         }
         convertBlockType(row, type, b.dataset.slashLevel ? { level: Number(b.dataset.slashLevel) } : {});
@@ -1208,8 +1210,12 @@ function studyNoteEditor(note, subjects) {
     let pickerMode = "insert"; // insert | turnInto
     let colorPanelKind = "text"; // text | bg
     let lastKeyboardHeight = 0;
+    let toolbarShown = false;
+    let intentionalBlur = false; // trueの間はfocusoutが来てもツールバーを隠さない（パネルを開くための一時的なblur）
+    let settleTimers = [];
 
     const blurActive = () => { document.activeElement?.blur?.(); };
+    const blurForPanel = () => { intentionalBlur = true; blurActive(); };
     const refocusActive = () => {
       if (!activeRow || !document.body.contains(activeRow)) return;
       const t = activeRow.dataset.type === "toggle" ? $(".note-toggle-summary", activeRow) : $(".note-block-text", activeRow);
@@ -1272,6 +1278,7 @@ function studyNoteEditor(note, subjects) {
     };
 
     function updateToolbarPosition() {
+      if (!toolbarShown) return;
       const vv = window.visualViewport;
       if (!vv) return;
       const kh = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
@@ -1281,11 +1288,44 @@ function studyNoteEditor(note, subjects) {
       const outerH = toolbarOuter.offsetHeight || 60;
       toolbarOuter.style.top = Math.max(0, window.innerHeight - used - outerH) + "px";
     }
+    // キーボードの高さが変わった時だけ再計算する（スクロール中は動かさない＝「後追い」させない）
     vvResizeHandler = () => updateToolbarPosition();
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", vvResizeHandler);
-      window.visualViewport.addEventListener("scroll", vvResizeHandler);
     }
+    // キーボードのスライドアニメーションが終わるまで高さが確定しないことがあるため、
+    // フォーカス直後は少し間隔をあけて何度か位置を計算し直し、最終的な高さに合わせる
+    function scheduleSettle() {
+      settleTimers.forEach(clearTimeout);
+      settleTimers = [0, 80, 160, 260, 400, 600].map((ms) => setTimeout(updateToolbarPosition, ms));
+    }
+    function showToolbar() {
+      if (toolbarShown) return;
+      toolbarShown = true;
+      toolbarOuter.classList.add("visible");
+      scheduleSettle();
+    }
+    function hideToolbar() {
+      if (!toolbarShown) return;
+      toolbarShown = false;
+      toolbarOuter.classList.remove("visible");
+      settleTimers.forEach(clearTimeout);
+      settleTimers = [];
+      if (toolbarMode !== "keyboard") setToolbarMode("keyboard");
+    }
+    // ノート内のどれかのcontenteditableにフォーカスが当たっている間だけツールバーを表示する
+    wrap.addEventListener("focusin", (e) => {
+      if (!e.target.isContentEditable) return;
+      showToolbar();
+      scheduleSettle();
+    });
+    wrap.addEventListener("focusout", () => {
+      if (intentionalBlur) { intentionalBlur = false; return; }
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (!active || !active.isContentEditable || !wrap.contains(active)) hideToolbar();
+      }, 0);
+    });
 
     function setToolbarMode(mode) {
       toolbarMode = mode;
@@ -1311,10 +1351,12 @@ function studyNoteEditor(note, subjects) {
       if (type === "page") {
         const pageId = await createChildPage();
         setToolbarMode("keyboard");
-        if (!pageId) return;
-        const target = activeRow || lastBlockRow();
-        const newRow = insertBlockAfter(target, "page", "", { pageId });
-        activeRow = newRow;
+        if (pageId) {
+          const target = activeRow || lastBlockRow();
+          const newRow = insertBlockAfter(target, "page", "", { pageId });
+          activeRow = newRow;
+        }
+        hideToolbar(); // ページ行はフォーカス対象がないので、ここで手放して非表示に戻す
         return;
       }
       const extra = level ? { level } : {};
@@ -1340,7 +1382,7 @@ function studyNoteEditor(note, subjects) {
         const wasInsertOpen = toolbarMode === "picker" && pickerMode === "insert";
         pickerMode = "insert";
         if (wasInsertOpen) { setToolbarMode("keyboard"); refocusActive(); }
-        else { blurActive(); setToolbarMode("picker"); }
+        else { blurForPanel(); setToolbarMode("picker"); }
       } else if (tb === "aa") {
         if (toolbarMode === "aa" || toolbarMode === "color") setToolbarMode("keyboard");
         else setToolbarMode("aa");
@@ -1353,14 +1395,14 @@ function studyNoteEditor(note, subjects) {
         const wasTurnIntoOpen = toolbarMode === "picker" && pickerMode === "turnInto";
         pickerMode = "turnInto";
         if (wasTurnIntoOpen) { setToolbarMode("keyboard"); refocusActive(); }
-        else { blurActive(); setToolbarMode("picker"); }
+        else { blurForPanel(); setToolbarMode("picker"); }
       } else if (tb === "undo") {
         doUndo();
       } else if (tb === "close") {
         if (toolbarMode !== "keyboard") { setToolbarMode("keyboard"); refocusActive(); }
         else blurActive();
       } else if (aa === "color") {
-        blurActive();
+        blurForPanel();
         setToolbarMode("color");
       } else if (aa === "back") {
         if (toolbarMode === "color") { setToolbarMode("aa"); refocusActive(); }
